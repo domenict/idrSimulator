@@ -1,0 +1,1760 @@
+/* -------------------------------------------------
+    GLOBAL VARIABLES
+------------------------------------------------- */
+let incTimer, scrollTimer, cryptoWorker, workerUrl;
+const cache = {};
+const announcer = document.getElementById('live-announcements');
+
+
+/* *************************************************************************************************
+************************                      DOM LOAD                      ************************
+************************************************************************************************* */
+document.addEventListener('DOMContentLoaded', async function() {
+    const loader = document.getElementById('initial-loader');
+    try {
+        const prefersDark = localStorage.getItem('theme') === "dark" || window.matchMedia('(prefers-color-scheme: dark)').matches;
+        if (prefersDark) {
+            delayTransition(true);
+            document.documentElement.setAttribute('data-theme', 'dark');
+
+            const button = document.getElementById('themeToggle');
+            button.setAttribute('aria-label', 'Switch to light mode');
+        }
+
+        // Build HTML from templates, page hidden to avoid CLS getting destroyed
+        await buildHTML();
+        document.getElementById("page-wrapper").style.visibility = 'visible';
+        
+        addFormListeners();
+        addModalListeners();
+    } catch (err) {
+        console.log(err.message);
+        loader.innerHTML = `
+            <p class="loader-text">An error occured while loading the page.</p>
+            <p class="loader-text">Please refresh the page and try again.</p>
+        `;
+        return;
+    }
+
+    setTimeout(() => {
+        const loader = document.getElementById('initial-loader');
+        loader.click(); // Spoofs LCP due to Google's (LCP) calculation not liking my tooltips, delay needed to be bullet proof
+        loader.remove();
+        
+        const savedSession = localStorage.getItem("savedSession");
+        if (savedSession) showModal('restore', savedSession);
+    }, 75);
+});
+
+// Theme toggle + transition delay to prevent elements with transitions from flashing
+function toggleTheme() {
+    delayTransition(false);
+    const isDark = document.documentElement.getAttribute('data-theme') === 'dark';
+    document.documentElement.setAttribute('data-theme', isDark ? 'light' : 'dark');
+    localStorage.setItem('theme', isDark ? 'light' : 'dark');
+
+    const button = document.getElementById('themeToggle');
+    button.setAttribute('aria-label', isDark ? 'Switch to light mode' : 'Switch to dark mode');
+}
+function delayTransition(fromLoad) {
+    const overlay = document.getElementById("overlay");
+    const pageWrapper = document.getElementById("page-wrapper");
+    overlay.classList.add("delay-transition");
+    pageWrapper.classList.add("delay-transition");
+
+    const themeIcon = document.getElementById("themeToggle");
+    if (!fromLoad) themeIcon.classList.add("override-delay");
+
+    setTimeout(() =>  {
+        overlay.classList.remove("delay-transition");
+        pageWrapper.classList.remove("delay-transition");
+        if (!fromLoad) themeIcon.classList.remove("override-delay");
+    }, 10);
+}
+
+// Element attributes must be set to correct state after restoring/deleting session
+function updateToggleEvents() {
+    toggleMarriedListenerHandler();
+    toggleIncomeGrowth(document.getElementById("fixedMonthly"));
+
+    const repaymentPlans = Array.from(document.querySelectorAll('[data-field="repaymentPlan"]'));
+    repaymentPlans.forEach(element => repaymentPlanToggle(element));
+}
+
+// Mostly static listeners that are form's default state
+function addFormListeners() {
+    // Top modal buttons via event delegation
+    document.body.addEventListener('click', function(e) {
+        if (e.target.matches('#saveToStorage, #deleteStorage')) {
+            e.preventDefault();
+            showModalHandler(e);
+        }
+    });
+
+    // Theme Toggle
+    document.getElementById('themeToggle')?.addEventListener('click', toggleTheme);
+
+    // Submits form to "back-end" with custom Enter handling 
+    document.getElementById("calcForm").addEventListener("submit", submitForm);
+    document.getElementById('calcForm').addEventListener('keydown', moveToNext);
+
+    // Toggles married radios
+    const marriedRadios = document.getElementsByName('married');
+    Array.from(marriedRadios).forEach(radio => {
+        radio.addEventListener('change', toggleMarriedListenerHandler);
+    });
+
+    // Number input handling
+    const clampNumberInputs = document.querySelectorAll('input[type="number"]');
+    clampNumberInputs.forEach(element => { 
+        element.addEventListener("change", handleInputChange);
+        element.addEventListener("focus", handleInputFocus);
+        element.addEventListener("blur", handleInputBlur);
+        element.addEventListener("beforeinput", handleInputBeforeInput);
+    });
+
+    // Steps integer number inputs for custom spinners, supports holding and acceleration
+    document.querySelectorAll('.input-wrapper').forEach(wrapper => createSpinnerListeners(wrapper));
+
+    // Add custom select drop downs
+    document.querySelectorAll('.select-wrapper').forEach(wrapper => createSelectListeners(wrapper));
+
+    // Plan type changes qualifiedPayments min/max and placeholder
+    const repaymentPlans = Array.from(document.querySelectorAll('[data-field="repaymentPlan"]'));
+    repaymentPlans.forEach(element => { element.addEventListener('change', repaymentPlanListenerHandler)});
+    
+    // Fixed monthly enables/disabled income growth fields
+    const fixedMonthly = document.getElementById('fixedMonthly');
+    fixedMonthly.addEventListener('change', toggleIncomeGrowthListenerHandler);
+
+    // Add/delete row buttons through event delegation
+    document.getElementById('selfLoans').addEventListener('click', handleLoanButtonClick);
+    document.getElementById('selfLoans').addEventListener('keydown', handleLoanButtonKeydown);
+    document.getElementById('spouseLoans').addEventListener('click', handleLoanButtonClick);
+    document.getElementById('spouseLoans').addEventListener('keydown', handleLoanButtonKeydown);
+
+    // Makes tooltips accessible
+    document.querySelectorAll('.help-wrapper').forEach(wrapper => createTooltipListeners(wrapper));
+
+    // Sets bounding box for tooltips, resizes automatically if orientation changes
+    const helpWrappers = Array.from(document.querySelectorAll('.help-wrapper'));
+    helpWrappers.forEach(element => {
+        element.addEventListener('focusin', tooltipBoundingBox);
+        element.addEventListener('pointerenter', tooltipBoundingBox);
+    })
+    const resizeObserver = new ResizeObserver(resize);
+    resizeObserver.observe(document.documentElement);
+}
+
+
+/* *************************************************************************************************
+************************                   MODAL FUNCTIONS                  ************************
+************************************************************************************************* */
+
+/* -------------------------------------------------
+    MODAL LISTENER FUNCTIONS
+------------------------------------------------- */
+function trapFocus(e) {
+    if (e.key === 'Escape' || e.key === 'Esc') {
+        e.preventDefault();
+        e.stopPropagation();
+        hideModal();
+        return;
+    }
+
+    const overlay = e.currentTarget;
+    const candidates = overlay.querySelectorAll('button, input');
+    const focusable = Array.from(candidates).filter(el => {
+        return el.offsetParent !== null && 
+               getComputedStyle(el).visibility !== 'hidden' &&
+               !el.disabled &&
+               !el.hasAttribute('hidden');
+    });
+    
+    const first = focusable[0], last = focusable[focusable.length - 1];
+    if (e.key === 'Tab') {
+        if (e.shiftKey && document.activeElement === first) { e.preventDefault(); last.focus(); }
+        else if (!e.shiftKey && document.activeElement === last) { e.preventDefault(); first.focus(); }
+    }
+}
+
+function updateCapsLockWarning(e) {
+    const warningElement = e.target.closest("#modal").querySelector("#modal-capslock-warning");
+    const capsOn = e.getModifierState && e.getModifierState('CapsLock');
+    warningElement.style.opacity = capsOn ? '1' : '0';
+}
+
+function handleModalInputKeydown(e) {
+    const acceptBtn = e.target.closest("#modal").querySelector("#modal-accept-btn");
+    if (e.key === 'Enter') acceptBtn.click(); 
+}
+
+function handleModalInputBlur(e) {
+    const input = e.target;
+    if (e.relatedTarget !== input.nextElementSibling) {
+        const warningElement = e.target.closest("#modal").querySelector("#modal-capslock-warning");
+        warningElement.style.opacity = '0';
+    }
+}
+
+function handleModalPassToggleShow(e) {
+    const showHideButton = e.currentTarget;
+    const input = showHideButton.previousElementSibling;
+    showHideButton.textContent = "Hide";
+    input.type = "text";
+    showHideButton.focus();
+}
+
+function handleModalPassToggleHide(e) {
+    const showHideButton = e.currentTarget;
+    const input = showHideButton.previousElementSibling;
+    showHideButton.textContent = "Show";
+    input.type = "password";
+}
+
+function handleModalPassToggleShowKey(e) {
+    if (e.key !== 'Enter') return;
+    handleModalPassToggleShow(e);
+}
+
+function handleModalPassToggleHideKey(e) {
+    updateCapsLockWarning(e);
+    if (e.key !== 'Enter') return;
+    handleModalPassToggleHide(e);
+}
+
+function handleModalPassToggleBlur(e) {
+    const showHideButton = e.currentTarget;
+    if (e.relatedTarget !== showHideButton.previousElementSibling) {
+        const warningElement = e.target.closest("#modal").querySelector("#modal-capslock-warning");
+        warningElement.style.opacity = '0';
+    }
+}
+
+function addModalListeners() {
+    const input = document.getElementById("modal-passphrase-input");
+    input.addEventListener('click', updateCapsLockWarning);
+    input.addEventListener('keydown', handleModalInputKeydown);
+    input.addEventListener('keyup', updateCapsLockWarning);
+    input.addEventListener('focus', handleInputFocus);
+    input.addEventListener('blur', handleModalInputBlur);
+
+    const showHideButton = document.getElementById("modal-show-hide-toggle");
+    showHideButton.addEventListener("pointerdown", handleModalPassToggleShow);
+    showHideButton.addEventListener("pointerup", handleModalPassToggleHide);
+    showHideButton.addEventListener('keydown', handleModalPassToggleShowKey);
+    showHideButton.addEventListener('keyup', handleModalPassToggleHideKey);
+    showHideButton.addEventListener("blur", handleModalPassToggleBlur);
+}
+
+/* -------------------------------------------------
+    MODAL HELPER FUNCTIONS
+------------------------------------------------- */
+function hideModal() {
+    const wrapper = document.getElementById("page-wrapper");
+    const overlay = document.getElementById("overlay");
+
+    wrapper.style.filter = 'none';
+    wrapper.style.visibility = 'visible';
+    wrapper.style.opacity = '1';
+    document.documentElement.style.overflowY = "scroll";
+
+    overlay.classList.add('fadeOut');
+    overlay.style.overflowY = "hidden";
+    setTimeout(() => {
+        const input = overlay.querySelector('#modal-passphrase-input');
+        const acceptBtn = overlay.querySelector('#modal-accept-btn');
+        const rejectBtn = overlay.querySelector('#modal-reject-btn');
+
+        input.value = '';
+        if (acceptBtn._acceptHandler) {
+            acceptBtn.removeEventListener('click', acceptBtn._acceptHandler);
+            acceptBtn._acceptHandler = null;
+        }
+        if (rejectBtn._rejectHandler) {
+            rejectBtn.removeEventListener('click', rejectBtn._rejectHandler);
+            rejectBtn._rejectHandler = null;
+        }
+
+        overlay.removeEventListener('keydown', trapFocus);
+        overlay.style.display = "none";
+        overlay.classList.remove('fadeOut');
+    }, 250);
+};
+
+function showModalHandler(e) {
+    const btn = e.target;
+
+    let template;
+    if (btn.id === 'saveToStorage') {
+        template = "save";
+    } else if (btn.id === 'deleteStorage') {
+        template = "delete";
+    } else {
+        return;
+    }
+    showModal(template);
+}
+
+/* -------------------------------------------------
+    MODAL MAIN AND TEMPLATES
+------------------------------------------------- */
+function showModal(templateStr, savedSession) {
+    const wrapper = document.getElementById("page-wrapper");
+    const overlay = document.getElementById("overlay");
+    const modal = overlay.querySelector('#modal');
+    const spinner = overlay.querySelector('#spinner');
+    const confirmation = overlay.querySelector('#modal-confirmation');
+    const header = modal.querySelector('#modal-header');
+    const text = modal.querySelector('#modal-text');
+    const inputWrapper = modal.querySelector('#modal-input-wrapper');
+    const input = modal.querySelector('#modal-passphrase-input');
+    const acceptBtn = modal.querySelector('#modal-accept-btn');
+    const rejectBtn = modal.querySelector('#modal-reject-btn');
+
+    let template;
+    switch(templateStr) {
+        case "restore":
+            template = getRestoreTemplate(savedSession, modal, spinner, input, header, text);
+            break;
+        case "save":
+            template = getSaveTemplate(modal, spinner, confirmation, input);
+            break;        
+        case "delete":
+            template = getDeleteTemplate(modal, confirmation);
+            break; 
+    }
+    header.innerHTML = template.header;
+    text.innerHTML = template.text;
+    acceptBtn.innerHTML = template.accept;
+    rejectBtn.innerHTML = template.reject;
+
+    if (template.wrapperHidden) {
+        wrapper.style.visibility = 'hidden';
+        wrapper.style.opacity = '0';
+    } else {
+        wrapper.style.filter = "blur(10px)";
+    }
+
+    if (template.input) {
+        inputWrapper.style.display = "flex";
+        text.style.margin = "calc(var(--space-5) * 0.85) 0";
+    } else {
+        inputWrapper.style.display = "none";
+        text.style.margin = "calc(var(--space-5) * 0.85) 0 0 0";
+    }
+
+    // Reset
+    document.documentElement.style.overflowY = "hidden";
+    overlay.style.overflowY = "scroll";
+    overlay.style.display = "flex";
+    overlay.addEventListener('keydown', trapFocus);
+    modal.style.display = "flex";
+    spinner.style.display = "none";
+    confirmation.style.display = "none";
+    (template.input) ? input.focus() : rejectBtn.focus();
+
+    // Button listeners
+    const acceptHandler = template.acceptHandler;
+    acceptBtn._acceptHandler = acceptHandler;
+    acceptBtn.addEventListener("click", acceptHandler);
+
+    const rejectHandler = template.rejectHandler;
+    rejectBtn._rejectHandler = rejectHandler;
+    rejectBtn.addEventListener("click", rejectHandler);
+}
+
+// Restore template
+function getRestoreTemplate(savedSession, modal, spinner, input, header, text) {
+    const acceptHandler = async () => {
+        function updateTextForFail(header, text) {
+            header.textContent = "Incorrect passphrase – try again";
+            text.textContent = "Please try again or start a new session.";
+        }
+        
+        const passphrase = input.value;
+        if (!passphrase) {
+            updateTextForFail(header, text);
+            input.focus();
+            return;
+        }
+
+        modal.style.display = "none";
+        spinner.style.display = "flex";
+
+        const pass = await loadFromStorage(passphrase, savedSession);
+        if (pass) {
+            updateToggleEvents();
+            announce('Your saved session has been restored.');
+            hideModal();
+        } else {
+            updateTextForFail(header, text);
+            spinner.style.display = "none";
+            modal.style.display = "flex";
+            input.value = '';
+            input.focus();
+        }
+    }
+    const rejectHandler = () => { hideModal(); };
+
+    const restoreTemplate = {
+        wrapperHidden: true,
+        input: true,
+        header: "Restore Previous Session?",
+        text: "Enter your passphrase to restore your previous session.",
+        accept: "Restore",
+        acceptHandler,
+        reject: "Start New",
+        rejectHandler
+    }
+    return restoreTemplate;
+}
+
+// Save template
+function getSaveTemplate(modal, spinner, confirmation, input) {
+    const acceptHandler = async () => {
+        const passphrase = input.value;
+        if (!passphrase) {
+            input.focus();
+            return;
+        }
+
+        modal.style.display = "none";
+        spinner.style.display = "flex";
+
+        const foundStorage = localStorage.getItem("savedSession");
+        const pass = await saveToStorage(passphrase);
+        spinner.style.display = "none";
+        if (pass) {
+            confirmation.style.display = "flex";
+            confirmation.innerHTML = 
+                (foundStorage
+                    ? `<p class="fadeIn modal-message">Your saved session has been updated.</p>`
+                    : `<p class="fadeIn modal-message">Your session has been saved.</p>`
+                );
+            announce(confirmation.textContent);
+        } else {
+            confirmation.innerHTML = `<p class="fadeIn modal-message">An error occured. Please try again.</p>`;
+            announce(confirmation.textContent);
+        }
+        setTimeout(() => hideModal(), 1250);
+    }
+    const rejectHandler = () => { hideModal(); };
+
+    const saveTemplate = {
+        wrapperHidden: false,
+        input: true,
+        header: "Save This Session?",
+        text: 
+            "The current session will be saved to your local storage." +
+            "Your data will be encrypted solely on your personal device by this specific " +
+            "browser and will persist unless manually deleted or automatically cleared " +
+            "by the browser itself." +
+            "\n\nTo proceed, provide a passphrase to encrypt this session " +
+            "to your local storage. This passphrase is not saved in any way and is not " +
+            "recoverable if lost.",
+        accept: "Save",
+        acceptHandler,
+        reject: "Cancel",
+        rejectHandler
+    }
+    return saveTemplate;
+}
+
+// Delete template
+function getDeleteTemplate(modal, confirmation) {
+    const acceptHandler = async () => {
+        const pass = await clearSessions();
+        modal.style.display = "none";
+        confirmation.style.display = "flex";
+        if (pass) {
+            confirmation.innerHTML = `<p class="fadeIn modal-message">Your sessions have been deleted.</p></div>`
+            announce(confirmation.textContent);
+        } else {
+            confirmation.innerHTML = `<p class="fadeIn modal-message">An error occured. Please try again.</p>`;
+            announce(confirmation.textContent);
+        }
+        setTimeout(() => hideModal(), 1250);
+    }
+    const rejectHandler = () => { hideModal(); };
+
+    const deleteTemplate = {
+        wrapperHidden: false,
+        input: false,
+        header: "Confirm Deletion?",
+        text: "All current and saved session data will be deleted.",
+        accept: "Delete",
+        acceptHandler,
+        reject: "Cancel",
+        rejectHandler
+    }
+    return deleteTemplate;
+}
+
+
+/* *************************************************************************************************
+************************                STORAGE AND ENCRYPTION              ************************
+************************************************************************************************* */
+
+// Runs worker to keep main thread clear during encryption/decryption
+async function runWorkerTask(task, data) {
+    cryptoWorker = createCryptoWorker();
+
+    return new Promise((resolve, reject) => {
+        cryptoWorker.onmessage = (e) => {
+            resolve(e.data);
+            cryptoWorker.terminate();
+            cryptoWorker = null;
+        };
+        cryptoWorker.onerror = (err) => {
+            reject(err);
+            cryptoWorker.terminate();
+            cryptoWorker = null;
+        };
+        cryptoWorker.postMessage({ task, data });
+    });
+}
+
+// Restores encrypted data in local storage while adding any HTML elements missing from previous session
+async function loadFromStorage(passphrase, savedSession) {
+    const fromLocalStorageObject = await runWorkerTask('decrypt', [passphrase, savedSession]);
+    const error = fromLocalStorageObject["error"];
+    if (error) {
+        console.log(error);
+        return false;
+    }
+
+    // ---- first, restore cache -----------------
+    const keysFromLocalStorageCache = Object.keys(fromLocalStorageObject["cache"]);
+    for (let i = 0; i < keysFromLocalStorageCache.length; i++) {
+        const key = keysFromLocalStorageCache[i];
+        cache[key] = fromLocalStorageObject["cache"][key];
+    }
+    delete fromLocalStorageObject["cache"];
+
+    // ---- then, loan counts (they create DOM rows) -----------------
+    const selfLoanCount = fromLocalStorageObject["selfLoanCount"];
+    const spouseLoanCount = fromLocalStorageObject["spouseLoanCount"];
+    if (selfLoanCount && selfLoanCount > 1) { await addBulkEmptyLoans("selfLoans", selfLoanCount); }
+    if (spouseLoanCount && spouseLoanCount > 1) { await addBulkEmptyLoans("spouseLoans", spouseLoanCount); }
+    delete fromLocalStorageObject["selfLoanCount"];
+    delete fromLocalStorageObject["spouseLoanCount"];
+    
+    // ---- finally, fill every stored field -------------------------------
+    const VALID = /^(?:\d+(?:\.\d{1,2})?|(yes|no)|(old|new|rap)|(none|self|spouse)|(us|ak|hi))$/i;
+    const keysFromLocalStorage = Object.keys(fromLocalStorageObject);
+    for (const key of keysFromLocalStorage) {
+        const value = fromLocalStorageObject[key];
+        const element = document.getElementById(key);
+
+        if (!VALID.test(value)) {
+            if (!value && element.value) element.value = '';
+            continue;
+        }
+
+        if (element) {
+            element.value = value;
+            if (element.classList.contains('hidden-select-input')) {
+                const { options } = getSelectComponents(element);
+                let index = 0;
+                for (index; index < options.length; index++) {
+                    if (options[index].getAttribute('data-value') === element.value) break;
+                }
+                setSelectOption(options[index]);
+            }
+        } else {
+            const radios = Array.from(document.getElementsByName(key)).filter(input => input.type === 'radio');
+            radios.length && Array.from(radios).forEach(r => {
+                if (r.value === value) r.checked = true;
+            });
+        }
+    }
+    return true;
+}
+
+// Encrypts current session to local storage
+async function saveToStorage(passphrase) {    
+    localStorage.removeItem("savedSession");
+
+    // Get loan count first
+    const selfLoanCount = document.getElementById("selfLoans").children[1].childElementCount;
+    const spouseLoanCount = document.getElementById("spouseLoans").children[1].childElementCount;
+    const toLocalStorage = document.querySelectorAll('[data-storage="localStorage"]');
+    const toLocalStorageObject = Array.from(toLocalStorage).reduce((obj, element) => {
+        if (element.type === 'radio') {
+            obj[element.name] = document.querySelector('input[name="' + element.name + '"]:checked').value;
+        } else {
+            obj[element.name] = element.value;
+        }
+        return obj;
+    }, {});
+    const keysToLocalStorageObject = Object.keys(toLocalStorageObject);
+
+    // Validate and remove empty/invalid inputs
+    const VALID = /^(?:\d+(?:\.\d{1,2})?|(yes|no)|(old|new|rap)|(none|self|spouse)|(us|ak|hi))$/i;
+    for (const key of keysToLocalStorageObject) {
+        const value = toLocalStorageObject[key];
+        if (value && !VALID.test(value)) {
+            delete toLocalStorageObject[key];
+            continue;
+        }
+    }
+    toLocalStorageObject["selfLoanCount"] = selfLoanCount;
+    toLocalStorageObject["spouseLoanCount"] = spouseLoanCount;
+    toLocalStorageObject["cache"] = JSON.parse(JSON.stringify(cache));
+
+    const encryptedsavedSession = await runWorkerTask('encrypt', [passphrase, toLocalStorageObject]);
+    const error = encryptedsavedSession["error"];
+    if (error) {
+        console.log(error);
+        return false;
+    }
+    
+    localStorage.setItem("savedSession", encryptedsavedSession);
+    return true;
+}
+
+// Creates worker blob to offload heavy encryption compute for improved UI -- code by Grok
+function createCryptoWorker() {
+    const workerScript = `
+        importScripts('https://unpkg.com/argon2-browser@1/dist/argon2-bundled.min.js');
+
+        const encoder = new TextEncoder();
+        const decoder = new TextDecoder();
+
+        async function getKeyFromPassphrase(passphrase, salt) {
+            try {
+                const params = {
+                    pass: passphrase,
+                    salt: salt,
+                    time: 3,
+                    mem: 64 * 1024,
+                    parallelism: 1,
+                    hashLen: 32,
+                    type: argon2.ArgonType.Argon2id
+                };
+                const { hash } = await argon2.hash(params);
+                return await crypto.subtle.importKey(
+                    'raw',
+                    hash,
+                    { name: 'AES-GCM' },
+                    false,
+                    ['encrypt', 'decrypt']
+                );
+            } catch (e) {
+                throw new Error('Key derivation failed: ' + e.message);
+            }
+        }
+
+        async function encryptData(passphrase, plainObj) {
+            if (typeof passphrase !== 'string' || passphrase.length === 0) {
+                throw new Error('Passphrase must be a non-empty string');
+            }
+            if (plainObj === null || plainObj === undefined) {
+                throw new Error('Data to encrypt cannot be null/undefined');
+            }
+
+            const salt = crypto.getRandomValues(new Uint8Array(16));
+            const iv   = crypto.getRandomValues(new Uint8Array(12));
+            const key  = await getKeyFromPassphrase(passphrase, salt);
+
+            const jsonString = JSON.stringify(plainObj);
+            const data = encoder.encode(jsonString);
+
+            const ciphertext = await crypto.subtle.encrypt(
+                { name: 'AES-GCM', iv },
+                key,
+                data
+            );
+
+            return btoa(JSON.stringify({
+                s: Array.from(salt),
+                i: Array.from(iv),
+                c: Array.from(new Uint8Array(ciphertext))
+            }));
+        }
+
+        async function decryptData(passphrase, encryptedB64) {
+            if (typeof passphrase !== 'string' || passphrase.length === 0) {
+                throw new Error('Passphrase must be a non-empty string');
+            }
+            if (typeof encryptedB64 !== 'string' || encryptedB64.length === 0) {
+                throw new Error('Encrypted data must be a non-empty Base64 string');
+            }
+
+            let envelope;
+            try {
+                envelope = JSON.parse(atob(encryptedB64));
+            } catch (_) {
+                throw new Error('Invalid Base64 or corrupted envelope');
+            }
+
+            const { s, i, c } = envelope;
+            if (!Array.isArray(s) || !Array.isArray(i) || !Array.isArray(c)) {
+                throw new Error('Envelope missing required arrays (s, i, c)');
+            }
+            if (s.length < 16) throw new Error('Salt too short (expected ≥16 bytes)');
+            if (i.length !== 12) throw new Error('IV must be exactly 12 bytes');
+            if (c.length === 0) throw new Error('Ciphertext is empty');
+
+            const salt = new Uint8Array(s);
+            const iv   = new Uint8Array(i);
+            const ciphertext = new Uint8Array(c);
+
+            const key = await getKeyFromPassphrase(passphrase, salt);
+            let plain;
+            try {
+                plain = await crypto.subtle.decrypt(
+                    { name: 'AES-GCM', iv },
+                    key,
+                    ciphertext
+                );
+            } catch (e) {
+                throw new Error('Decryption failed: wrong passphrase or corrupted data');
+            }
+
+            const jsonString = decoder.decode(plain);
+            try {
+                return JSON.parse(jsonString);
+            } catch (_) {
+                throw new Error('Decrypted data is not valid JSON');
+            }
+        }
+
+        self.onmessage = async function(e) {
+            const { task, data } = e.data;
+            const passphrase = data[0];
+            const payload    = data[1];
+            let result;
+
+            try {
+                if (task === 'encrypt') {
+                    result = await encryptData(passphrase, payload);
+                } else if (task === 'decrypt') {
+                    result = await decryptData(passphrase, payload);
+                } else {
+                    throw new Error('Unknown task: ' + task);
+                }
+            } catch (err) {
+                result = { error: err.message };
+            }
+
+            self.postMessage(result);
+        };
+
+        self.onerror = function(err) {
+            self.postMessage({ error: 'Worker crashed: ' + err.message });
+        };
+    `;
+
+    const blob = new Blob([workerScript], { type: 'application/javascript' });
+    workerUrl = URL.createObjectURL(blob);
+    cryptoWorker = new Worker(workerUrl);
+
+    // revoke immediately for clean-up
+    URL.revokeObjectURL(workerUrl);
+    workerUrl = null;
+
+    return cryptoWorker;
+}
+
+
+/* *************************************************************************************************
+************************                  LISTENER FUNCTIONS                ************************
+************************************************************************************************* */
+
+// Sumission form to ./backEnd.js
+function submitForm(event) {
+    event.preventDefault();
+    const results = document.getElementById('results');
+    const form = document.getElementById("calcForm");
+    const formData = new FormData(form);
+    const formObject = Object.fromEntries(formData);
+
+    const pass = formObjectValidation(formObject);
+    if (!pass) return;
+
+    const output = calculatePayments(formObject);
+    if (output !== undefined && output.length > 0) {
+        const elements = document.getElementsByClassName('submitAnimation');
+        Array.from(elements).forEach(element => {
+            element.style.display = "flex";
+            element.classList.remove('animated-' + element.id);
+            element.offsetHeight;
+            element.classList.add('animated-' + element.id);
+        });
+        results.textContent = output;
+        announce(output);
+
+        smoothScroll("resultsContainer", 1000);
+        results.parentElement.focus();
+    }
+}
+
+function moveToNext(e) {
+    if (e.key !== 'Enter') return;
+    if (document.activeElement.tagName === 'BUTTON') return;
+    e.preventDefault();
+    e.stopPropagation();
+
+    // Emulates tabbing for accessibility
+    const focusable = Array.from(document.getElementById("calcForm").querySelectorAll(
+        'a[href], button, input, select, textarea, [tabindex]:not([tabindex="-1"])'
+    )).filter(el => {
+        if (el.offsetParent === null) return false;
+        if (el.disabled) return false;
+        if (el.matches('.spinner-btn, .show-hide-toggle, .help-wrapper, .addLoan, .deleteLoan')) return false;
+        if (el.type === "radio" && el.checked === false) return false;
+        return true;
+    });
+
+    let index = focusable.indexOf(e.target);
+    /* This might break accessibility, keeping just in case
+    if (index === -1) {
+        const parent = e.target.closest(".help-wrapper");
+        index = focusable.indexOf(parent);
+    }
+    */
+    const next = focusable[index + 1];
+    if (next) next.focus();
+}
+
+// Removes all data stored
+async function clearSessions() {
+    try {
+        // Clear storage/cache
+        localStorage.removeItem("savedSession");
+        const cacheKeys = Object.keys(cache);
+        cacheKeys.forEach(key => { delete cache[key]; });
+
+        // Clear form, announcer and results
+        document.getElementById('calcForm').reset();
+        announcer.textContent = '';
+        document.getElementById("results").textContent = '';
+        Array.from(document.getElementsByClassName('submitAnimation')).forEach(el => { el.style.display = "none"; });
+
+        // Reset custom selects
+        document.querySelectorAll('.select-wrapper').forEach(wrapper => {
+            const { options } = getSelectComponents(wrapper);
+            setSelectOption(options[0]);
+        });
+
+        // Remove added DOM rows
+        const parentElementIds = ["selfLoans", "spouseLoans"];
+        parentElementIds.forEach(element => {
+            const loanTableBody = document.getElementById(element).querySelector('tbody');
+            let borrowerLoanCount = loanTableBody.childElementCount;
+            while(borrowerLoanCount > 1) {
+                const rowElement = loanTableBody.children[borrowerLoanCount - 1];
+                removeLoanInputListeners(rowElement);
+                rowElement.remove();
+                borrowerLoanCount--;
+            }
+        });
+
+        // Reset toggle events and scroll before returning
+        updateToggleEvents();
+        window.scrollTo(0, 0);
+        return true;
+    } catch (err) {
+        console.log(err.message);
+        return false;
+    }
+}
+
+// Clamps input to HTML set min/max
+function handleInputChange(e) {
+    const element = e.target;
+    const min = parseFloat(element.min);
+    const max = parseFloat(element.max);
+    const value = parseFloat(element.value);
+    if (!isNaN(min) && !isNaN(max) && !isNaN(value)) {
+        element.value = Math.max(min, Math.min(value, max));
+    } 
+    if (cache[element.name + ".bak"] !== undefined) {
+        delete cache[element.name + ".bak"];
+    }
+}
+
+// Highlights on focus for a better experience
+function handleInputFocus(e) {
+    e.target.select();
+}
+
+// Formats integers vs rates/dollars
+function handleInputBlur(e) {
+    const element = e.target;
+    const value = element.value;
+    element.value = value; // Fixes decimal shenanigans
+    if (value) {
+        if (element.step === "1") {
+            element.value = parseInt(value);
+        } else {
+            element.value = parseFloat(value).toFixed(2);
+        }  
+    }
+}
+
+// Prevents invalid entry
+function handleInputBeforeInput (e) {
+    const inserted = e.data || '';
+    const input = e.target;
+    const before = input.value.slice(0, input.selectionStart);
+    const after = input.value.slice(input.selectionEnd);
+    const newValue = before + inserted + after;
+    const num = parseFloat(newValue);
+
+    if (/[eE+\-]/.test(inserted)) {
+        e.preventDefault();
+        return;
+    }
+    if (newValue !== '' && !/^\d*\.?\d{0,1}$/.test(newValue)) {
+        delayNumberFormatting(input);
+        return;
+    }
+    if (!isNaN(num) && num > input.max) {
+        delayNumberFormatting(input);
+        return;
+    }
+}
+
+// Modifies qualifiedPayment min/max based on plan
+function repaymentPlanListenerHandler(e) {
+    repaymentPlanToggle(e.target);
+}
+function repaymentPlanToggle(element) {
+    const repaymentPlanValue = element.value;
+    const repaymentPlanId = element.id;
+    const borrower = repaymentPlanId.split("_")[0];
+
+    // Sets qualifiedPayment max/placeholders based on repaymentPlan selection
+    const qualifiedPaymentId = borrower + "_qualifiedPayments";
+    const qualifiedPaymentElement = document.getElementById(qualifiedPaymentId);
+    const qualifiedPaymentMaximums = ["old", 300, "new", 240, "rap", 360];
+    const index = qualifiedPaymentMaximums.indexOf(repaymentPlanValue) + 1;
+    const maxPayments = qualifiedPaymentMaximums[index];
+    qualifiedPaymentElement.placeholder = "Forgiveness at " + maxPayments;
+    qualifiedPaymentElement.max = maxPayments;
+
+    const qualifiedPaymentValue = Number(qualifiedPaymentElement.value);
+    const key = qualifiedPaymentId + ".bak";
+    const cachedQualifyingPayments = cache[key];
+    if (cachedQualifyingPayments !== undefined) {
+        if (cachedQualifyingPayments <= maxPayments) {
+            qualifiedPaymentElement.value = cache[key];
+            delete cache[key];
+        } else {
+            qualifiedPaymentElement.value = maxPayments.toString();
+        }
+    } else if (qualifiedPaymentValue > maxPayments) {
+        cache[key] = qualifiedPaymentElement.value;
+        qualifiedPaymentElement.value = maxPayments.toString();
+    }
+
+    //const planShort = element.options[element.selectedIndex].text;
+    const customTrigger = document.querySelector(`[data-id="${element.id}"] .select-value`);
+    const planShort = customTrigger ? customTrigger.textContent.trim() : 'Unknown Plan';
+
+    
+    qualifiedPaymentElement.setAttribute('aria-label', `Your${(borrower === 'spouse') ? ' spouse\'s ' : ' '}number of payments made (maximum ${maxPayments} on ${planShort} plan)`);
+    const message = (qualifiedPaymentValue > maxPayments)
+                    ? `Your${(borrower === 'spouse') ? ' spouse\'s' : ''} plan changed to ${planShort}. Maximum qualifying payments reduced to ${maxPayments}. Value clamped from ${qualifiedPaymentValue}.`
+                    : `Your${(borrower === 'spouse') ? ' spouse\'s' : ''} plan changed to ${planShort}. Forgiveness now after ${maxPayments} qualifying payments.`
+    announce(message);
+}
+
+// Fixed monthly toggles incomeGrowth, storing/recalling from cache 
+function toggleIncomeGrowthListenerHandler(e) {
+    toggleIncomeGrowth(e.target);
+}
+function toggleIncomeGrowth(element) {
+    const fixedMonthly = (element.value === "yes") ? true : false;
+    const incomeGrowth = Array.from(document.querySelectorAll('[data-field="incomeGrowth"]'));
+
+    incomeGrowth.forEach(element => {
+        const key = element.id + ".bak";
+        let value = element.value;
+        if (fixedMonthly && cache[key] === undefined) {
+            cache[key] = value;
+            value = "0.00";
+        }
+        if (!fixedMonthly) {
+            if (cache[key] !== undefined) {
+                value = cache[key];
+                delete cache[key];
+            } else if (value === "") {
+                value = null;
+            } 
+        }
+        value = (value !== null) ? value : "";
+
+        element.value = value;
+        element.readOnly = (fixedMonthly) ? true : false;
+        element.tabIndex = (fixedMonthly) ? -1 : 0;
+        element.setAttribute("aria-disabled", (fixedMonthly) ? 'true' : 'false');
+
+        const wrapper = element.closest('.input-wrapper.percent');
+        if (fixedMonthly) {
+            wrapper.classList.add("incomeGrowthDisabled");
+        } else { 
+            wrapper.classList.remove("incomeGrowthDisabled");
+        }
+    });
+
+    const isMarried = document.querySelector('input[name="married"]:checked')?.value === 'yes';
+    const message = (fixedMonthly)
+                    ? `Fixed monthly payment selected. Annual income growth field${isMarried ? 's' : ''} disabled and set to zero.`
+                    : `Scale with income growth selected. Annual income growth field${isMarried ? 's' : ''} re-enabled.`;
+    announce(message);
+}
+
+// Toggles spouse field style/classes based on married radio and toggle type
+function toggleMarriedListenerHandler() {
+    const isMarried = document.querySelector('input[name="married"]:checked')?.value === 'yes';
+    toggleMarried(isMarried);
+}
+function toggleMarried(isMarried) {
+    const familySize = document.getElementById('familySize');
+    const familySizeKey = "familySize.bak";
+    const spouseBlock = document.getElementById("spouseBlock");
+    const spouseDivs = document.getElementsByClassName("spouseDiv");
+    const spouseFields = document.querySelectorAll('[data-tag="spouseField"]');
+    const familyInfo = document.getElementById('familyInfo');
+    const radios = document.getElementById('radios');
+
+    if (isMarried) {
+        // Adjust spacer first before any re-paints
+        const spouseBlockHeight = spouseBlock.offsetHeight;
+        removeFromSpacer(spouseBlockHeight);
+        spouseBlock.style.display = 'grid';
+
+        familySize.min = '2';
+        familyInfo.classList.replace('row-2', 'row-3');
+        radios.classList.replace('row-1','row-2');
+        Array.from(spouseDivs).forEach(element => { element.style.display = 'flex'; });
+        Array.from(spouseFields).forEach(element => { 
+            if (element.name !== "filingJointly") element.setAttribute("required", ""); 
+            element.disabled = false; 
+        });
+        if (Number(familySize.value) < Number(familySize.min)) {
+            cache[familySizeKey] = familySize.value;
+            familySize.value = Math.max(familySize.min, familySize.value);
+        }
+
+        announce('Spouse fields have been added.');
+    } else {
+        // Adjust spacer first before any re-paints
+        const offset = parseInt(window.getComputedStyle(document.getElementById("calcForm")).getPropertyValue('gap')) || 0;
+        const spouseBlockHeight = spouseBlock.offsetHeight;
+        addToSpacer(spouseBlockHeight, offset); // offset 1rem due to calcForm gap
+        spouseBlock.style.display = 'none';
+
+        familySize.min = '1';
+        familyInfo.classList.replace('row-3', 'row-2');
+        radios.classList.replace('row-2', 'row-1');
+        Array.from(spouseDivs).forEach(element => { element.style.display = 'none'; });
+        Array.from(spouseFields).forEach(element => { 
+            if (element.name !== "filingJointly") element.removeAttribute("required"); 
+            element.disabled = true;
+        });
+        if (cache[familySizeKey] !== undefined) {
+            familySize.value = cache[familySizeKey];
+            delete cache[familySizeKey];
+        }
+        if (familySize.value === "") familySize.value = familySize.min;
+
+        announce('Spouse fields have been removed.');
+    }
+}
+
+
+/* *************************************************************************************************
+************************             INCREMENT SPINNER FUNCTIONS            ************************
+************************************************************************************************* */
+
+// Steps integer number inputs for custom spinners, supports holding
+function startIncrement(inc, input) {
+    let multiplier = 250;
+    startTimer(inc, input, multiplier);
+
+    function startTimer(inc, input, multiplier) {
+        const accelerate = (inc) => {
+            if (!incTimer) return;
+            addStep(inc, input);
+            multiplier = Math.max(10, multiplier / 1.25);
+            incTimer = setTimeout(() => accelerate(inc), multiplier);
+        };
+        clearTimeout(incTimer);
+        addStep(inc, input);
+        incTimer = setTimeout(() => accelerate(inc), multiplier);
+    };
+
+    function addStep(inc, input) {
+        const min = parseFloat(input.min);
+        const max = parseFloat(input.max);
+        const value = parseFloat(input.value);
+        const float = Math.abs(inc) !== 1;
+        if (input.value === "" || isNaN(value)) {
+            input.value = (float) ? Math.max(min, min + inc).toFixed(2) : Math.max(min, min + inc);
+            return;
+        }
+        const newValue = value + inc;
+        if (newValue != value) {
+            input.value = (float) ? Math.max(min, Math.min(max, newValue)).toFixed(2) : Math.max(min, Math.min(max, newValue));
+        }
+    }
+}
+
+const stopIncrement = () => (clearTimeout(incTimer), incTimer = null);
+
+function handleIncUp(e) {
+    e.preventDefault();
+    const input = e.target.closest('.input-wrapper').querySelector('input');
+    const step = parseFloat(input.step);
+    startIncrement( step, input);
+}
+
+function handleIncDown(e) {
+    e.preventDefault();
+    const input = e.target.closest('.input-wrapper').querySelector('input');
+    const step = parseFloat(input.step);
+    startIncrement( -(step), input);
+}
+
+function createSpinnerListeners(wrapper) {
+    const up = wrapper.querySelector('.spinner-up');
+    const down = wrapper.querySelector('.spinner-down')
+    up.addEventListener('pointerdown', handleIncUp);
+    up.addEventListener('pointerup', stopIncrement);
+    up.addEventListener('pointerleave', stopIncrement);
+    up.addEventListener('pointercancel', stopIncrement);
+    down.addEventListener('pointerdown', handleIncDown);
+    down.addEventListener('pointerup', stopIncrement);
+    down.addEventListener('pointerleave', stopIncrement);
+    down.addEventListener('pointercancel', stopIncrement);
+}
+
+function removeSpinnerListeners(wrapper) {
+    const up = wrapper.querySelector('.spinner-up');
+    const down = wrapper.querySelector('.spinner-down')
+    up.removeEventListener('pointerdown', handleIncUp);
+    up.removeEventListener('pointerup', stopIncrement);
+    up.removeEventListener('pointerleave', stopIncrement);
+    up.removeEventListener('pointercancel', stopIncrement);
+    down.removeEventListener('pointerdown', handleIncDown);
+    down.removeEventListener('pointerup', stopIncrement);
+    down.removeEventListener('pointerleave', stopIncrement);
+    down.removeEventListener('pointercancel', stopIncrement);
+}
+
+
+/* *************************************************************************************************
+************************              LISTENER HELPER FUNCTIONS             ************************
+************************************************************************************************* */
+
+// Creates timeout to allow keydown to trigger before modifying input - gives some sort of user feedback
+const delayNumberFormatting = debounce((target) => {
+    const value = target.value;
+    if (!/^\d*\.?\d{0,2}$/.test(value)) {
+        target.value = (parseInt(value * 100)/100).toFixed(2);
+    }
+    if (Number(value) > Number(target.max)) {
+        target.value = target.max;
+    } 
+}, 1);
+
+// Debounce for delayed input handling
+function debounce(func, delay) {
+    let timeoutId;
+    return (...args) => {
+        clearTimeout(timeoutId);
+        timeoutId = setTimeout(() => func(...args), delay);
+   }
+}
+
+// Scrolling to top of specific div
+function smoothScroll(targetId, duration) {
+    const targetElement = document.getElementById(targetId);
+    if (!targetElement) return;
+  
+    const startPosition = window.scrollY;
+    const targetPosition = targetElement.getBoundingClientRect().top + startPosition;
+    const distance = targetPosition - startPosition;
+    let startTime = null;
+  
+    function animation(currentTime) {
+      if (startTime === null) startTime = currentTime;
+      const timeElapsed = currentTime - startTime;
+      const run = ease(timeElapsed, startPosition, distance, duration);
+      window.scrollTo(0, run);
+      if (timeElapsed < duration) {
+        requestAnimationFrame(animation);
+      }
+    }
+  
+    // Easing function for a smoother start and end
+    function ease(t, b, c, d) {
+      t /= d / 2;
+      if (t < 1) return c / 2 * t * t + b;
+      t--;
+      return -c / 2 * (t * (t - 2) - 1) + b;
+    }
+    requestAnimationFrame(animation);
+}
+
+// Validates if input is blank and forces focus/tooltip on first empty input
+function formObjectValidation(formObject) {
+    const keys = Object.keys(formObject);
+    for (let i = 0; i < keys.length; i++) {
+        const element = document.getElementById(keys[i]);
+        if (!element || element.type !== "number") continue;
+
+        let error = null;
+        if (element.value === "") {
+            error = "Please fill out this field.";
+        }
+
+        if (error) {
+            element.focus();
+            const errorElement = element.closest('.input-wrapper').querySelector('.error-message');
+            const errorId = "error-" + element.id;
+            if (errorElement.id !== errorId) errorElement.id = errorId;
+
+            // Sets left side margin based on input type
+            const hasPrefix = element.closest(".input-wrapper").classList.contains("dollar");
+            if (hasPrefix) {
+                errorElement.style.setProperty("--error-arrow-left", "2rem");
+            } else {
+                errorElement.style.setProperty("--error-arrow-left", "1rem");
+            }
+
+            errorElement.textContent = error;
+            errorElement.style.display = "flex";
+            errorElement.classList.add("fadeIn");
+            element.setAttribute('aria-invalid', 'true');
+            element.setAttribute('aria-errormessage', errorId);
+            announce(error);
+            setTimeout(() => announcer.textContent = '', 2000);
+
+            const hide = () => {
+                errorElement.textContent = "";
+                errorElement.style.display = "none";
+                errorElement.classList.remove("fadeIn");
+                element.removeAttribute('aria-invalid');
+                element.removeAttribute('aria-errormessage');
+                element.removeEventListener('input', hide);
+                element.removeEventListener('blur', hide);
+            };
+            element.addEventListener('input', hide);
+            element.addEventListener('blur', hide);
+            return false;
+        }
+    }
+    return true;
+}
+
+// For announcements
+function announce(message) {
+    announcer.textContent = '';
+    requestAnimationFrame(() => announcer.textContent = message);
+}
+
+
+/* *************************************************************************************************
+************************              CUSTOM SELECT FUNCTIONS               ************************
+************************************************************************************************* */
+function getSelectComponents(target) {
+    const wrapper = target.closest('.select-wrapper');
+    return {
+        trigger: wrapper.querySelector('.select-trigger'),
+        dropdown: wrapper.querySelector('.select-dropdown'),
+        options: [...wrapper.querySelectorAll('li')],
+        valueSpan: wrapper.querySelector('.select-value'),
+        hiddenInput: wrapper.querySelector('input[type="hidden"]')
+    }
+}
+
+function setSelectOption(option) {
+    const { dropdown, options, valueSpan, hiddenInput } = getSelectComponents(option);
+    options.forEach(o => o.removeAttribute('aria-selected'));
+    option.setAttribute('aria-selected', 'true');
+    dropdown.setAttribute('aria-activedescendant', option.id);
+    valueSpan.textContent = option.textContent;
+    hiddenInput.value = option.dataset.value;
+    hiddenInput.dispatchEvent(new Event('change'));
+}
+
+function handleSelectOpen(e) {
+    const { trigger, dropdown } = getSelectComponents(e.target);
+    trigger.setAttribute('aria-expanded', 'true');
+    dropdown.style.display = 'block';
+
+    requestAnimationFrame(() => {
+        if (dropdown.getBoundingClientRect().bottom + 16 > document.documentElement.clientHeight) {
+            dropdown.style.transform = 'translateY(-100%)';
+            dropdown.style.top = 'calc(0% - 1px)';
+        }
+        dropdown.focus();
+    });
+}
+
+function handleSelectClose(e) {
+    const { trigger, dropdown } = getSelectComponents(e.target);
+    trigger.setAttribute('aria-expanded', 'false');
+    dropdown.style.display = 'none';
+
+    requestAnimationFrame(() => {
+        dropdown.style.transform = 'none';
+        dropdown.style.top = 'calc(100% + 1px)';
+        dropdown.blur();
+    });
+}
+
+function handleSelectTriggerClick(e) {
+    e.stopPropagation();
+    const { trigger } = getSelectComponents(e.target);
+    const isExpanded = trigger.getAttribute('aria-expanded') === 'true';
+    (isExpanded) ? handleSelectClose(e) : handleSelectOpen(e);
+}
+
+function handleSelectTriggerKeydown(e) {
+    const { dropdown } = getSelectComponents(e.target);
+    if (['Enter',' '].includes(e.key)) {
+        e.preventDefault();
+        handleSelectOpen(e);
+        dropdown.focus();
+        return;
+    }
+    if(['ArrowDown', 'ArrowUp', 'Home', 'End'].includes(e.key)) {
+        e.preventDefault();
+        handleSelectKeydownNavigation(e);
+    }
+}
+
+function handleSelectDropdownBlur(e) {
+    if (e.target.style.display !== 'none') handleSelectClose(e);
+}
+
+function handleSelectDropdownKeydown(e) {
+    const { trigger } = getSelectComponents(e.target);
+    if (['Escape', 'Enter',' '].includes(e.key)) {
+        e.preventDefault();
+        handleSelectClose;
+        trigger.focus();
+        return;
+    }
+    if(['ArrowDown', 'ArrowUp', 'Home', 'End'].includes(e.key)) {
+        e.preventDefault();
+        handleSelectKeydownNavigation(e);
+    }
+}
+
+function handleSelectKeydownNavigation(e) {
+    const { options } = getSelectComponents(e.target);
+    let index = options.findIndex(o => o.hasAttribute('aria-selected'));
+    if (index === -1) index = 0;
+
+    let newindex = index;
+    if (e.key === 'ArrowDown') { e.preventDefault(); newindex = Math.min(index + 1, options.length - 1); }
+    if (e.key === 'ArrowUp')   { e.preventDefault(); newindex = Math.max(index - 1, 0); }
+    if (e.key === 'Home')      { e.preventDefault(); newindex = 0; }
+    if (e.key === 'End')       { e.preventDefault(); newindex = options.length - 1; }
+
+    if (newindex !== index) {
+        const opt = options[newindex];
+        setSelectOption(opt);
+    }
+}
+
+function handleSelectOptionClick(e) {
+    e.stopPropagation();
+    const option = e.target;
+    const { trigger } = getSelectComponents(option);
+    setSelectOption(option);
+    handleSelectClose;
+    trigger.focus();
+}
+
+function createSelectListeners(wrapper) {
+    const { trigger, dropdown, options } = getSelectComponents(wrapper);
+    trigger.addEventListener('pointerdown', handleSelectTriggerClick);
+    trigger.addEventListener('keydown', handleSelectTriggerKeydown);
+    dropdown.addEventListener('blur', handleSelectDropdownBlur);
+    dropdown.addEventListener('keydown', handleSelectDropdownKeydown);
+    options.forEach( opt => { opt.addEventListener('click', handleSelectOptionClick) });
+}
+
+
+/* *************************************************************************************************
+************************                  TOOLTIP FUNCTIONS                 ************************
+************************************************************************************************* */
+
+// Checks if tooltip is expanded 
+function createTooltipListeners(wrapper) {
+    const tooltip = wrapper.querySelector(".tooltip");
+    const show = (e) => {
+        const wrapper = e.target;
+        const message = tooltip.textContent.replace(/&#10;/g, '\n').trim();
+        const locked = tooltip.classList.contains("tooltip-locked");
+        if(!locked) {
+            announce(message);
+            wrapper.setAttribute('aria-expanded', 'true');
+        }
+    }
+    const hide = (e) => {
+        const wrapper = e.target;
+        const inFocus = tooltip.classList.contains("tooltip-open");
+        const locked = tooltip.classList.contains("tooltip-locked");
+        if (!inFocus && !locked) {
+            announcer.textContent = "";
+            wrapper.setAttribute('aria-expanded', 'false');
+            resetBoundingBox(tooltip);
+        }
+    }
+
+    wrapper.addEventListener('mouseenter', show);
+    wrapper.addEventListener('mouseleave', hide);
+    wrapper.addEventListener('click', focusTooltip);
+    wrapper.addEventListener('focus', focusTooltip);
+}
+
+// Reset tooltip to defaults on hide
+function resetBoundingBox(tooltip) {
+    tooltip.style.setProperty('--tooltip-transform', 'translateX(-50%) translateY(0%)');
+    tooltip.style.setProperty('--tooltip-top', '100%');
+    tooltip.style.setProperty('--tooltip-margin-top', 'var(--space-3)');
+    tooltip.style.setProperty('--tooltip-arrow-top', 'auto');
+    tooltip.style.setProperty('--tooltip-arrow-bottom', '100%');
+    tooltip.style.setProperty('--tooltip-arrow-left', '50%');
+    tooltip.style.setProperty('--tooltip-arrow-transform', 'translateX(-50%) rotate(0deg)');
+    tooltip.style.width = 'max-content';
+}
+
+// Resizes tooltips if orientation changes while open
+function resize() {
+    document.querySelectorAll('.help-wrapper:hover .tooltip, .help-wrapper:focus-within .tooltip').forEach(tooltip => {
+        const wrapper = tooltip.closest('.help-wrapper');
+        if (wrapper) tooltipBoundingBox({ target: wrapper });
+    });
+}
+
+// Sets bounding box for tooltips
+function tooltipBoundingBox(e) {
+    const wrapper = e.target.closest('.help-wrapper');
+    const tooltip = wrapper.querySelector('.tooltip');
+    if (!tooltip) return;
+
+    // Set globals and set width
+    let tooltipWidth, slide, shift;
+    const defaultMax = 280;
+    const pad = 16; 
+    const arrowWidth = 8;
+    const clientWidth = document.documentElement.clientWidth;
+    const clientHeight = document.documentElement.clientHeight;
+    const boundingWidth = clientWidth - pad * 2;
+    (defaultMax > boundingWidth) ? tooltipWidth = boundingWidth : tooltipWidth = defaultMax;
+    tooltip.style.width = tooltipWidth + 'px';
+    
+    requestAnimationFrame( () => {
+        // Slide X if off the screen 
+        let box = tooltip.getBoundingClientRect();
+        slide = Math.min(box.left - pad, 0);
+        if(!slide) slide = Math.max((box.right - clientWidth + pad), 0);
+        if (slide) {
+            if (tooltipWidth === boundingWidth) {
+                slide = (slide > pad) ? box.left - pad : box.left - pad / 2;
+            }
+            shift = slide / tooltipWidth * 100;
+            tooltip.style.setProperty('--tooltip-transform', `translateX(${-50 - shift}%)`);
+            tooltip.style.setProperty('--tooltip-arrow-left', `${50 + shift}%`);
+
+            // Shifts right a little if tooltip box goes beyond bounding icon
+            const originBox = wrapper.getBoundingClientRect();
+            box = tooltip.getBoundingClientRect();
+            if (originBox.right + arrowWidth > box.right) {
+                shift += ((box.right - arrowWidth - originBox.right) / tooltipWidth * 100);
+                tooltip.style.setProperty('--tooltip-transform', `translateX(${-50 - shift}%)`);
+                tooltip.style.setProperty('--tooltip-arrow-left', `${50 + shift}%`);
+            }
+        }
+
+        // Flip if tooltip extends past bottom of page
+        if (box.bottom + pad > clientHeight) { 
+            if (!shift) shift = 0;
+            tooltip.style.setProperty('--tooltip-transform', `translateX(${-50 - shift}%) translateY(-100%)`);
+            tooltip.style.setProperty('--tooltip-top', '0%');
+            tooltip.style.setProperty('--tooltip-margin-top', 'calc(var(--space-3) * -1)');
+            tooltip.style.setProperty('--tooltip-arrow-top', '100%');
+            tooltip.style.setProperty('--tooltip-arrow-bottom', '0%');
+            tooltip.style.setProperty('--tooltip-arrow-transform', 'translateX(-50%) rotate(180deg)');
+        }
+    });
+}
+
+// Focuses tooltip for accessability and locks other tooltips from hover
+function focusTooltip(e) {
+    e.stopPropagation();
+    e.preventDefault();
+    const wrapper = e.target.closest('.help-wrapper');
+    const tooltip = wrapper.querySelector(".tooltip");
+
+    const close = () => {
+        tooltip.classList.remove('tooltip-open');
+        tooltip.setAttribute('aria-hidden', 'true');
+        tooltip.blur();
+        tooltip.tabIndex = -1;
+        wrapper.tabIndex = 0;
+        wrapper.setAttribute('aria-expanded', 'false');
+        announcer.textContent = "";
+
+        Array.from(document.getElementsByClassName("tooltip-locked")).forEach(el => {
+            el.classList.remove("tooltip-locked");
+        });
+
+        tooltip.removeEventListener("focusout", close);
+        document.removeEventListener('click', close);
+        document.removeEventListener('keydown', escClose);
+    };
+    const escClose = (e) => { if (e.key === 'Escape' || e.key === "Enter" || e.key === " ") close(); };
+
+    const isOpen = tooltip.classList.toggle('tooltip-open');
+    if (isOpen) {
+        tooltip.setAttribute('role', 'tooltip'); // purely for screen readers
+        tooltip.setAttribute('aria-hidden', 'false');
+        tooltip.focus();
+        tooltip.tabIndex = 0;
+        wrapper.tabIndex = -1;
+        wrapper.setAttribute('aria-expanded', 'true');
+
+        Array.from(document.getElementsByClassName("tooltip")).forEach(el => {
+            if (el.id !== tooltip.id) el.classList.add("tooltip-locked");
+        });
+
+        setTimeout(() => {
+            tooltip.addEventListener("focusout", close, { once: true });
+            document.addEventListener('click', close, { once: true });
+            document.addEventListener('keydown', escClose);
+        }, 10);
+    }
+}
+
+
+/* *************************************************************************************************
+************************               DOM ROW HELPER FUNCTIONS             ************************
+************************************************************************************************* */
+
+// Helper to dynamically add listeners to new loan elements
+function addNewLoanInputListeners(rowElement) {
+    const inputs = rowElement.querySelectorAll('input');
+    inputs.forEach(input => {
+        input.addEventListener("change", handleInputChange);
+        input.addEventListener("focus", handleInputFocus);
+        input.addEventListener("blur", handleInputBlur);
+        input.addEventListener("beforeinput", handleInputBeforeInput);
+        createSpinnerListeners(input.closest('.input-wrapper'));
+    });
+}
+
+// Helper to dynamically remove listeners from a row to be deleted
+function removeLoanInputListeners(rowElement) {
+    const inputs = rowElement.querySelectorAll('input');
+    inputs.forEach(input => {
+        input.removeEventListener('change', handleInputChange);
+        input.removeEventListener('focus', handleInputFocus);
+        input.removeEventListener('blur', handleInputBlur);
+        input.removeEventListener('beforeinput', handleInputBeforeInput);
+        removeSpinnerListeners(input.closest('.input-wrapper'));
+    });
+}
+
+// Helper for add/loan event delegation
+function handleLoanButtonClick(e) {
+    const btn = e.target.closest('.addLoan, .deleteLoan');
+    if (!btn || !document.body.contains(btn) || btn.disabled) return;
+
+    const row = btn.closest('tr');
+    if (!row || !document.body.contains(row)) return;
+
+    btn.disabled = true;
+    if (btn.classList.contains('addLoan')) {
+        addRow(row);
+    } else {
+        deleteRow(row);
+    }
+    setTimeout(() => btn.disabled = false, 50);
+}
+
+function handleLoanButtonKeydown(e) {
+    if (e.key !== 'Enter') return;
+
+    let btn = e.target.closest('.addLoan, .deleteLoan');
+    if (!btn || !document.body.contains(btn) || btn.disabled) return;
+
+    const row = btn.closest('tr');
+    if (!row || !document.body.contains(row)) return;
+
+    e.preventDefault();
+    e.stopPropagation();
+    btn.disabled = true;
+    if (btn.classList.contains('addLoan')) {
+        addRow(row);
+    } else {
+        const id = btn.id;
+        deleteRow(row);
+        btn = document.getElementById(id);
+        if (!btn) {
+            const borrower = id.split("_loan")[0];
+            const loanNumber = parseInt(id.split("_loan")[1][0]) - 1;
+            btn = document.getElementById(borrower + '_loan' + loanNumber + '_delete');
+        }
+    }
+    setTimeout(() => {btn.disabled = false, btn.focus()}, 50);
+}
+
+// Helper to loop through renaming loan table elements when added or deleted
+function renameElements(container, oldIndex, newIndex) {
+    const oldTag = "loan" + oldIndex;
+    const newTag = "loan" + newIndex;
+    const elements = container.querySelectorAll('[id*=' + oldTag + '], [name*=' + oldTag + '], [aria-label*="' + oldIndex + '"]');
+    elements.forEach(el => {  
+        if (el.id && el.id.includes(oldTag)) {
+            el.id = el.id.replace(oldTag, newTag);        
+        }
+        if (el.name && el.name.includes(oldTag)) {
+            el.name = el.name.replace(oldTag, newTag);
+        }
+        if (el.tagName === 'SPAN' && el.textContent.includes('Loan ' + oldIndex)) {
+            el.textContent = el.textContent.replace('Loan ' + oldIndex, 'Loan ' + newIndex);
+        }
+        if (el.hasAttribute('aria-label')) {
+            const currentLabel = el.getAttribute('aria-label');
+            if (currentLabel.includes('loan ' + oldIndex)) {
+                el.setAttribute('aria-label', currentLabel.replace('loan ' + oldIndex, 'loan ' + newIndex));
+            }
+        }
+    });
+}
+
+// Bulk adds empty loan rows when restoring previous session data
+async function addBulkEmptyLoans(parentId, count) {
+    const borrower = parentId.split("L")[0];
+    const rowParent = document.getElementById(parentId).children[1];
+
+    // Create copies of template
+    for (let i = 2; i <= count; i++) {
+        const rowElement = document.createElement("tr");
+        rowElement.id = borrower + "_loan" + i;
+        rowElement.innerHTML = getRowTemplate(borrower, i);
+        rowParent.append(rowElement);
+        addNewLoanInputListeners(rowElement);
+    }
+}
+
+// Adds loan child divs to the borrowers loan table, renames existing loans and adds listeners
+function addRow(referenceRow) {
+    const borrower = referenceRow.id.split("_loan")[0];
+    const loanNumber = parseInt(referenceRow.id.split("_loan")[1]) + 1;
+
+    // Copy template into new child and insert into correct location
+    const newRow = document.createElement("tr");
+    newRow.id = borrower + "_loan" + loanNumber;
+    newRow.innerHTML = getRowTemplate(borrower, loanNumber);
+    referenceRow.after(newRow);
+    const newRowHeight = newRow.offsetHeight;
+    removeFromSpacer(newRowHeight);
+    addNewLoanInputListeners(newRow);
+
+    // Rename existing elements and add listeners
+    let nextRow = newRow.nextElementSibling;
+    let newLoanNumber = loanNumber + 1;
+    while(nextRow) {
+        renameElements(nextRow, newLoanNumber - 1, newLoanNumber);
+        nextRow.id = borrower + "_loan" + newLoanNumber;
+        nextRow = nextRow.nextElementSibling;
+        newLoanNumber++;
+    }
+
+    // Announcement for accessibility
+    const loanCount = referenceRow.parentElement.childElementCount;
+    const message = `Loan ${loanNumber} has been added. Your${(borrower === 'spouse') ? ' spouse\'s ' : ' '}loan count is now ${loanCount}.`;
+    announce(message);
+}
+
+// Deletes loan child div from the borrowers table and renames existing elements
+function deleteRow(rowToDelete) {
+    const borrower = rowToDelete.id.split("_loan")[0];
+    const rowParent = rowToDelete.parentElement;
+    let loanNumber = parseInt(rowToDelete.id.split("_loan")[1]);
+    let nextRow = rowToDelete.nextElementSibling;
+
+    // If only a single element, clear contents instead of removing
+    if (rowParent.childElementCount === 1) {
+        rowToDelete.querySelectorAll('input').forEach(inp => inp.value = '');
+        return;
+    }
+
+    removeLoanInputListeners(rowToDelete);
+    const rowToDeleteHeight = rowToDelete.offsetHeight;
+    addToSpacer(rowToDeleteHeight, 0);  //no offset from parent
+    rowToDelete.remove();
+    while(nextRow) {
+        renameElements(nextRow, loanNumber + 1, loanNumber);
+        nextRow.id = borrower + "_loan" + loanNumber;
+        nextRow = nextRow.nextElementSibling;
+        loanNumber++;
+    }
+
+    // Announcement for accessibility
+    const loanCount = rowParent.childElementCount;
+    const message = `Loan ${loanNumber} has been removed. Your${(borrower === 'spouse') ? ' spouse\'s ' : ' '}loan count is now ${loanCount}.`;
+    announce(message);
+}
+
+
+/* *************************************************************************************************
+************************                   SPACER FUNCTIONS                 ************************
+************************************************************************************************* */
+
+// Creates spacer to maintain scrollY when removing or hiding elements
+function addToSpacer(divHeight, offset) {
+    const spacer = document.getElementById("spacer");
+    const scrollY = window.scrollY;
+    const docHeight = document.documentElement.scrollHeight;
+
+    const nearBottom = scrollY + window.innerHeight >= docHeight - divHeight - 1; //prevents subpixels
+    const hasScrollbar = docHeight > window.innerHeight;
+    if (nearBottom && hasScrollbar) {
+        if (spacer.offsetHeight === 0) window.addEventListener("scroll", checkSpacer, {passive:true});
+        spacer.style.height = (parseInt(spacer.style.height || '0') + divHeight) + (offset || 0) + "px";
+        window.scrollTo(0, scrollY);
+        checkSpacer();
+    }
+}
+
+// Remove from spacer when adding or showing elements
+function removeFromSpacer(divHeight) {
+    const spacer = document.getElementById("spacer");
+    if(parseInt(spacer.style.height)) {
+        spacer.style.height = Math.max(0, (parseInt(spacer.style.height || '0') - divHeight)) + "px";
+        checkSpacer();
+    }
+}
+
+// Listens for scroll and reduce spacer height; remove listener if height is zero
+function checkSpacer() {
+    clearTimeout(scrollTimer);
+    scrollTimer = setTimeout(() => {
+        const spacer = document.getElementById("spacer");
+        if (!spacer) return;
+
+        const spacerTop = spacer.offsetTop; //Body is parent so this measures from top of page
+        const pageBottom = window.scrollY + window.innerHeight;
+        spacer.style.height = Math.max(0, pageBottom - spacerTop) + "px";
+        
+        const fullScreen = document.documentElement.scrollHeight <= window.innerHeight + 1;
+        if (fullScreen || spacer.offsetHeight <= 1) {
+            spacer.style.height = "0px";
+            window.removeEventListener("scroll", checkSpacer);
+        }
+    }, 25);
+}

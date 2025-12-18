@@ -1,41 +1,55 @@
-// Globals must be cleared/formatted at input validation
-let basicInfo, basicInfoBackup, loans, loansBackup, married; 
+/* -------------------------------------------------
+    GLOBAL VARIABLES / PROTOTYPES
+------------------------------------------------- */
+// Update annually via https://aspe.hhs.gov/topics/poverty-economic-mobility/poverty-guidelines
+const BASE_2025 = { ak: 19550, hi: 17990, us: 15650 };
+const INCREMENT_2025 = { ak: 6880, hi: 6330, us: 5500 };
+const ANNUAL_GROWTH_RATE = 0.025; // Rough annual poverty line growth over last 30 years
 
-// main
+Number.prototype.roundDecimals = function roundDecimals(places) {
+    const offset = Math.pow(10, places);
+    return Math.round(this * offset) / offset; 
+}
+
+/* -------------------------------------------------
+    MAIN
+------------------------------------------------- */
 function calculatePayments(data) {
-    const date = new Date();
-    let output = JSON.stringify(date);
+    let output, basicInfoBase, loansBase;
+    let year = 0;
+    const basicInfo     = { self: {}};
+    const loans         = { self: {}};
+    const idrHistory    = {};
 
     const sortedData = Object.keys(data).sort().reduce((obj, key) => {
         obj[key] = data[key];
         return obj; 
     }, {});
-    const inputValidated = inputValidation(sortedData);
-    if (inputValidated) { 
-        basicInfoBackup = JSON.parse(JSON.stringify(basicInfo));
-        loansBackup = JSON.parse(JSON.stringify(loans));
-    } else {
+    const inputValidated = inputValidation(sortedData, basicInfo, loans);
+    if (!inputValidated) { 
         return "There was an error processing your request.\nPlease refresh the page and try again.";
     }
-    //console.log(married);
-    console.log(basicInfoBackup);
-    console.log(loansBackup);
+    basicInfoBase = JSON.parse(JSON.stringify(basicInfo));
+    loansBase = JSON.parse(JSON.stringify(loans));
 
-    return output;
+    calculateMinimumPayments(basicInfo, loans, year, idrHistory);
+    console.log(loans);
+    console.log(idrHistory);
+
+    return JSON.stringify(new Date());
 }
+/* FOR TESTING
+    node backEnd.js "$(cat ../data_married.txt)"
+    */
+    const input = JSON.parse(process.argv[2]);
+    calculatePayments(input);
 
 
-// Input validation and data extraction from submitted form
-function inputValidation(data) {
-    // Clear globals
-    basicInfo = {
-        self: {}
-    };
-    loans = [];
-    basicInfoBackup = null;
-    loansBackup = null;
-    married = null;
 
+/* -------------------------------------------------
+    INPUT VALIDATION
+------------------------------------------------- */
+function inputValidation(data, basicInfo, loans) {
     // If type === boolean -> [key, "boolean" as string, array where index 0 is false and index 1 is true]
     // If type === string -> [key, "string" as string, array of valid strings]
     // If type === number -> [key, "number" as string, specify float/integer as string, min, max]
@@ -44,7 +58,8 @@ function inputValidation(data) {
     const primaryInputMap = [
         ["fixedMonthly", "boolean", ["no","yes"]],
         ["self_repaymentPlan", "string", ["old", "new", "rap"]],
-        ["spouse_repaymentPlan", "string", ["old", "new", "rap"], "marriedDependent"]
+        ["spouse_repaymentPlan", "string", ["old", "new", "rap"], "marriedDependent"],
+        ["dependents", "number", "integer", 0, 97]
     ];
     const secondaryInputMap = [
         ["monthlyPayment", "number", "float", 0, 9999999999999.99],
@@ -55,7 +70,7 @@ function inputValidation(data) {
         ["familySize", "number", "integer", 1, 99],
         ["residency", "string", ["us", "ak", "hi"]], 
         ["filingJointly", "boolean", ["no", "yes"], "marriedDependent"],
-        ["priority", "string", ["none","self","spouse"], "marriedDependent"],
+        ["priority", "string", ["self", "spouse", "both"], "marriedDependent"],
         ["spouse_agi", "number", "float", 0, 9999999999999.99, "marriedDependent"],
         ["spouse_annualGrowth", "number", "float", 0, 99.99, "marriedDependent"],
         ["spouse_qualifiedPayments", "number", "integer", 0, 360, "marriedDependent"],
@@ -71,13 +86,13 @@ function inputValidation(data) {
 
     /* -------------------- VALIDATION STARTS HERE -------------------- */
     // married should always be first due to the plethora of dependencies
+    let married = null;
     let pass = validateInputMap(marriedMap);
     if (!pass) return false;
     if (basicInfo.married) {
         married = true;
         basicInfo.spouse = {};
-        const familySizeIndex = getInputMapIndex(secondaryInputMap, "familySize");
-        secondaryInputMap[familySizeIndex][3]++; 
+        loans.spouse = {};
     }
     
     // primaryInputMap next, modifies secondary map
@@ -88,6 +103,11 @@ function inputValidation(data) {
         const spouseAnnualGrowthIndex = getInputMapIndex(secondaryInputMap, "spouse_annualGrowth"); 
         secondaryInputMap[selfAnnualGrowthIndex][4] = 0;
         secondaryInputMap[spouseAnnualGrowthIndex][4] = 0;
+    }
+    if (basicInfo.dependents || married) {
+        const familySizeIndex = getInputMapIndex(secondaryInputMap, "familySize");
+        secondaryInputMap[familySizeIndex][3] = 1 + basicInfo.dependents;
+        if (married) secondaryInputMap[familySizeIndex][3]++;
     }
     updateBorrowerQualifiedPaymentMax("self", "self_repaymentPlan", "self_qualifiedPayments", planMap);
     if (married) updateBorrowerQualifiedPaymentMax("spouse", "spouse_repaymentPlan", "spouse_qualifiedPayments", planMap);
@@ -245,7 +265,7 @@ function inputValidation(data) {
             const reduceInterest = basicInfo[borrower]['interestReduction'];
             if (reduceInterest) loan[2] = Math.max(0, loan[2] - 0.25);
     
-            loans.push([borrower, loanNumber, ...loan]);
+            loans[borrower][loanNumber] = [...loan];
             remainingKeys.splice(0,3);
             lastBorrower = borrower;
             loanNumber++;
@@ -255,21 +275,155 @@ function inputValidation(data) {
 }
 
 
+/* -------------------------------------------------
+    IDR CERTIFICATION
+------------------------------------------------- */
+// Married Filing Jointly = Combined AGI prorated to share of the total debt, spouse always part of family size
+// Married Filing Separately = Individual responsibility, borrower with higher AGI claims dependents while other has family size of 2
+function calculateMinimumPayments(basicInfo, loans, year, saveToHistory) {
+    const loanSums = { 'self': getLoanSum(loans, 'self') };
+    saveToHistory[year] = {};
 
+    if (basicInfo.married) {
+        loanSums['spouse'] = getLoanSum(loans, 'spouse');
+        const marriedLoanSum = loanSums.self + loanSums.spouse;
+        const greaterAGI = (basicInfo.self.agi > basicInfo.spouse.agi) ? 'self' : 'spouse';
+        
+        ['self', 'spouse'].forEach(borrower => {
+            const borrowerLoans = loans[borrower];
+            const AGI = (basicInfo.filingJointly) ? basicInfo.self.agi + basicInfo.spouse.agi : basicInfo[borrower].agi;
+            const portionOfPayment = (basicInfo.filingJointly) ? loanSums[borrower] / marriedLoanSum : 1;
+            const plan = basicInfo[borrower].repaymentPlan;
 
+            let povertyLine, dependents;
+            if (basicInfo.filingJointly) {
+                povertyLine = calculatePovertyGuidelines(basicInfo.familySize, basicInfo.residency, year);
+                dependents = basicInfo.dependents;
+            } else {
+                const isHigherEarner = (borrower === greaterAGI);
+                const familySize = (isHigherEarner) ? basicInfo.familySize : 2;
+                povertyLine = calculatePovertyGuidelines(familySize, basicInfo.residency, year);
+                dependents = (isHigherEarner) ? basicInfo.dependents : 0;
+            }
 
-
-// Update annually via https://aspe.hhs.gov/topics/poverty-economic-mobility/poverty-guidelines
-function calculatePovertyGuidelines(familySize, residency) {
-
-    if (residency === "AK") {
-        return 19550 + (familySize - 1) * 6880;
-    } else if (residency === "HI") {
-        return 17990 + (familySize - 1) * 6330;
+            const planOptions = calculatePaymentPlans(borrowerLoans, AGI, portionOfPayment, povertyLine, dependents);
+            saveToHistory[year][borrower] = planOptions;
+            const monthlyPayment = planOptions[plan];
+            distributeMonthlyPaymentToLoans(borrower, loans, loanSums[borrower], monthlyPayment);
+        });
     } else {
-        return 15650 + (familySize - 1) * 5500;
+        const borrowerLoans = loans.self;
+        const AGI = basicInfo.self.agi;
+        const portionOfPayment = 1;
+        const plan = basicInfo.self.repaymentPlan;
+        const povertyLine = calculatePovertyGuidelines(basicInfo.familySize, basicInfo.residency, year);
+        const dependents = basicInfo.dependents;
+
+        const planOptions = calculatePaymentPlans(borrowerLoans, AGI, portionOfPayment, povertyLine, dependents);
+        saveToHistory[year]['self'] = planOptions;
+        const monthlyPayment = planOptions[plan];
+        distributeMonthlyPaymentToLoans('self', loans, loanSums['self'], monthlyPayment);
+    }
+
+    /* -------------------------------------------------
+        IDR CERTIFICATION FUNCTIONS
+    ------------------------------------------------- */
+    function getLoanSum(loans, borrower) {
+        let total = 0;
+        const keys = Object.keys(loans[borrower]);
+        for (let i = 0; i < keys.length; i++) {
+            const principal = loans[borrower][keys[i]][0];
+            const interest = loans[borrower][keys[i]][1];
+            total += principal + interest;
+        }
+        return total;
+    }
+    
+    function calculatePovertyGuidelines(familySize = 1, residency = 'us', years = 0) {
+        const res = residency.toLowerCase();
+        const base = BASE_2025[res];
+        const inc = INCREMENT_2025[res];
+    
+        const amount = base + (familySize - 1) * inc;
+        const multiplier = Math.pow(1 + ANNUAL_GROWTH_RATE, years);
+        return Math.round(amount * multiplier);
+    }
+    
+    function calculatePaymentPlans(borrowerLoans, AGI, portionOfPayment, povertyLine, dependents) {
+        const oldIBR = (agi, pov) => { return Math.max(0, agi - pov * 1.5) * 0.15 / 12; }
+        const newIBR = (agi, pov) => { return Math.max(0, agi - pov * 1.5) * 0.10 / 12; }
+        const rap = (agi, deps) => {
+            const rate = Math.min(0.10, Math.floor(agi / 10000) / 100);
+            const baseAnnual = agi * rate;
+            const proratedAnnual = baseAnnual * portionOfPayment; // As of Nov 2025, RAP is prorated for married filing jointly
+            const monthlyPayment = (proratedAnnual / 12) - (50 * deps); // As of Nov 2025, borrower level reduction
+            return Math.max(10, monthlyPayment); // $10 minimum monthly payment
+        }
+        const std = (loans) => {
+            let totalMonthly = 0;
+            for (const id in loans) {
+                const [principal, interest, ratePercent] = loans[id];
+                const capitalized = principal + interest;
+                const rate = ratePercent / 100;
+                totalMonthly += capitalized * (rate / 12) / (1 - Math.pow(1 + rate / 12, -120));
+            }
+            return Math.max(50, totalMonthly); // $50 minimum per borrower
+        };
+    
+        const stdPayment = Math.round(std(borrowerLoans));
+        const planOptions = {};
+        ['rap', 'old', 'new', 'std'].forEach(plan => {
+            if (plan === 'rap') { planOptions[plan] = Math.round(rap(AGI, dependents)); }
+            if (plan === 'std') { planOptions[plan] = stdPayment; }
+            if (plan === 'old' || plan === 'new') {
+                const rawIBR = ((plan === 'old') ? oldIBR(AGI, povertyLine) : newIBR(AGI, povertyLine)) * portionOfPayment;
+                planOptions[plan] = Math.round(Math.min(rawIBR, stdPayment));
+            }
+        });
+        return planOptions;
+    }
+    
+    function distributeMonthlyPaymentToLoans(borrower, loans, totalLoanSumRaw, monthlyPayment) {
+        const borrowerLoans = loans[borrower];
+        const totalLoanSum = totalLoanSumRaw.roundDecimals(2);
+        let remainingPayment = monthlyPayment;
+    
+        let i = 0;
+        const loanLength = Object.keys(borrowerLoans).length;
+        for (const loan in borrowerLoans) {
+            const loanArr = borrowerLoans[loan];
+            const loanSum = loanArr[0] + loanArr[1]; // principal + interest
+    
+            const shareOfLoanTotal = loanSum / totalLoanSum;
+            let shareOfPayment;
+            if (i === loanLength - 1) {
+                shareOfPayment = remainingPayment.roundDecimals(2);
+                remainingPayment = 0;
+            } else {
+                shareOfPayment = (shareOfLoanTotal * monthlyPayment).roundDecimals(2);
+                remainingPayment -= shareOfPayment;
+            }
+    
+            if (loanArr[3] === undefined) {
+                loanArr.push(shareOfPayment)
+            }  else {
+                loanArr[3] = shareOfPayment;
+            } 
+            i++;
+        }
     }
 }
+
+
+
+
+
+
+
+
+
+
+
 
 
 function taxes2026(AGI, married, dependents) {

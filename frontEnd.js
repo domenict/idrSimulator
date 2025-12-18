@@ -76,6 +76,7 @@ function delayTransition(fromLoad) {
 function updateToggleEvents() {
     toggleMarriedListenerHandler();
     toggleIncomeGrowth(document.getElementById("fixedMonthly"));
+    updateFamilySizeMin(); //also called by toggleMarriedListenerHandler() but I'm paranoid;
 
     const repaymentPlans = Array.from(document.querySelectorAll('[data-field="repaymentPlan"]'));
     repaymentPlans.forEach(element => repaymentPlanToggle(element));
@@ -126,6 +127,9 @@ function addFormListeners() {
     // Fixed monthly enables/disabled income growth fields
     const fixedMonthly = document.getElementById('fixedMonthly');
     fixedMonthly.addEventListener('change', toggleIncomeGrowthListenerHandler);
+
+    // Adding/removing dependents updates family size minimum
+    document.getElementById('dependents').addEventListener('change', updateFamilySizeMinHandler);
 
     // Add/delete row buttons through event delegation
     document.getElementById('selfLoans').addEventListener('click', handleLoanButtonClick);
@@ -1008,63 +1012,66 @@ function toggleIncomeGrowth(element) {
     announce(message);
 }
 
+function updateFamilySizeMinHandler() { updateFamilySizeMin() };
+function updateFamilySizeMin() {
+    const isMarried = document.querySelector('input[name="married"]:checked')?.value === 'yes';
+    const familySize = document.getElementById('familySize');
+    const dependents = document.getElementById('dependents');
+    const dependentsValue = parseInt(dependents.value) || 0;
+    familySize.min = ((isMarried) ? 2 : 1) + dependentsValue;
+}
+
 // Toggles spouse field style/classes based on married radio and toggle type
 function toggleMarriedListenerHandler() {
     const isMarried = document.querySelector('input[name="married"]:checked')?.value === 'yes';
     toggleMarried(isMarried);
 }
 function toggleMarried(isMarried) {
-    const familySize = document.getElementById('familySize');
-    const familySizeKey = "familySize.bak";
+    const priorityField = document.querySelector('[aria-labelledby="priority-legend"]').closest('.radio-field');
     const spouseBlock = document.getElementById("spouseBlock");
     const spouseDivs = document.getElementsByClassName("spouseDiv");
     const spouseFields = document.querySelectorAll('[data-tag="spouseField"]');
-    const familyInfo = document.getElementById('familyInfo');
-    const radios = document.getElementById('radios');
+    const radiosTop = document.getElementById('radios-top');
 
     if (isMarried) {
         // Adjust spacer first before any re-paints
-        const spouseBlockHeight = spouseBlock.offsetHeight;
-        removeFromSpacer(spouseBlockHeight);
+        const removeFromOffset = spouseBlock.offsetHeight + priorityField.offsetHeight;
+        removeFromSpacer(removeFromOffset);
         spouseBlock.style.display = 'grid';
 
-        familySize.min = '2';
-        familyInfo.classList.replace('row-2', 'row-3');
-        radios.classList.replace('row-1','row-2');
-        Array.from(spouseDivs).forEach(element => { element.style.display = 'flex'; });
+        // Display spouse only containers and announce
+        radiosTop.classList.replace('row-1','row-2');
+        Array.from(spouseDivs).forEach(element => { 
+            const targets = ['row-1', 'row-2', 'row-3'];
+            const hasMatch = targets.some(cls => element.classList.contains(cls));
+            if (hasMatch) {
+                element.style.display = 'grid';
+            } else {
+                element.style.display = 'flex'; 
+            }
+        });
         Array.from(spouseFields).forEach(element => { 
             if (element.name !== "filingJointly") element.setAttribute("required", ""); 
             element.disabled = false; 
         });
-        if (Number(familySize.value) < Number(familySize.min)) {
-            cache[familySizeKey] = familySize.value;
-            familySize.value = Math.max(familySize.min, familySize.value);
-        }
-
         announce('Spouse fields have been added.');
     } else {
         // Adjust spacer first before any re-paints
         const offset = parseInt(window.getComputedStyle(document.getElementById("calcForm")).getPropertyValue('gap')) || 0;
-        const spouseBlockHeight = spouseBlock.offsetHeight;
-        addToSpacer(spouseBlockHeight, offset); // offset 1rem due to calcForm gap
+        const addToOffset = spouseBlock.offsetHeight + priorityField.offsetHeight;
+        addToSpacer(addToOffset, offset); // offset 1rem due to calcForm gap
         spouseBlock.style.display = 'none';
 
-        familySize.min = '1';
-        familyInfo.classList.replace('row-3', 'row-2');
-        radios.classList.replace('row-2', 'row-1');
+        // Hide spouse only containers and announce
+        radiosTop.classList.replace('row-2', 'row-1');
         Array.from(spouseDivs).forEach(element => { element.style.display = 'none'; });
         Array.from(spouseFields).forEach(element => { 
             if (element.name !== "filingJointly") element.removeAttribute("required"); 
             element.disabled = true;
         });
-        if (cache[familySizeKey] !== undefined) {
-            familySize.value = cache[familySizeKey];
-            delete cache[familySizeKey];
-        }
-        if (familySize.value === "") familySize.value = familySize.min;
-
         announce('Spouse fields have been removed.');
     }
+    updateFamilySizeMin();
 }
 
 
@@ -1209,9 +1216,22 @@ function formObjectValidation(formObject) {
         const element = document.getElementById(keys[i]);
         if (!element || element.type !== "number") continue;
 
+        Number.prototype.countDecimals = function countDecimals () {
+            if(Math.floor(this.valueOf()) === this.valueOf()) return 0;
+            return this.toString().split(".")[1].length || 0; 
+        }
+
         let error = null;
         if (element.value === "") {
             error = "Please fill out this field.";
+        } else if (parseFloat(element.value) < parseFloat(element.min)) {
+            error = `Value must be ${element.min} or greater.`;
+        } else if (parseFloat(element.value) > parseFloat(element.max)) {
+            error = `Value must be ${element.max} or fewer.`;
+        } else if (parseFloat(element.value).countDecimals() > parseFloat(element.step).countDecimals()) {
+            const decimalPlaces = parseFloat(element.step).countDecimals();
+            const isInteger = parseFloat(element.step).countDecimals() === 0;
+            error = `Value ${(isInteger) ? 'must be an integer.' : 'cannot exceed ' + decimalPlaces + ' decimal places.'}`;
         }
 
         if (error) {
@@ -1408,7 +1428,6 @@ function createTooltipListeners(wrapper) {
         if (!inFocus && !locked) {
             announcer.textContent = "";
             wrapper.setAttribute('aria-expanded', 'false');
-            resetBoundingBox(tooltip);
         }
     }
 
@@ -1443,6 +1462,7 @@ function tooltipBoundingBox(e) {
     const wrapper = e.target.closest('.help-wrapper');
     const tooltip = wrapper.querySelector('.tooltip');
     if (!tooltip) return;
+    resetBoundingBox(tooltip);
 
     // Set globals and set width
     let tooltipWidth, slide, shift;

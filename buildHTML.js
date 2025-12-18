@@ -53,11 +53,11 @@ const agiTemplate = {
     input: 'number',
     label: 'Annual AGI (Income)',
     id: 'agi',
-    ariaLabel: 'annual gross income (in dollars)',
+    ariaLabel: 'annual adjusted gross income (in dollars)',
     data: {
         'data-storage': "localStorage"
     },
-    spinnerLabel: 'annual income amount',
+    spinnerLabel: 'annual adjusted gross income amount',
     type: 'dollar',
     class: null,
     value: null,
@@ -65,8 +65,11 @@ const agiTemplate = {
     step: '0.01',
     min: '0.00',
     max: '9999999999999.99',
-    tooltip: false,
-    help: false,
+    tooltip: {
+        ariaLabel: 'Help about annual adjusted gross income entry',
+        text: 'AGI (Adjusted Gross Income) is the total gross salary minus applicable deductions which may include 401(k) and HSA/FSA contributions, interest premiums or student loan interest payments (up to $2500). The exact amount can be found on line 11 of your most recent tax return (Form 1040).'
+    },
+    help: true,
     prepend: true
 }
 
@@ -136,8 +139,35 @@ const familySizeTemplate = {
     step: '1',
     min: '1',
     max: '99',
-    tooltip: false,
-    help: false,
+    tooltip: {
+        ariaLabel: 'Help on how to determine family size',
+        text: 'Family size includes you, your spouse (if applicable), as well as any relative receiving greater than half of their financial support from your household.&#10;&#10;If married filing separately, it is assumed the borrowers are living together and the borrower with the higher AGI claims all dependents. Data may be entered as if single for unsupported use cases.'
+    },
+    help: true,
+    prepend: false
+}
+
+const dependentTemplate = {
+    input: 'number',
+    label: 'Child Dependents',
+    ariaLabel: 'child dependents',
+    id: 'dependents',
+    data: {
+        'data-storage': "localStorage"
+    },
+    spinnerLabel: 'child dependents',
+    type: null,
+    class: null,
+    value: "0",
+    placeholder: null,
+    step: '1',
+    min: '0',
+    max: '97',
+    tooltip: {
+        ariaLabel: 'Help on how to determine eligible dependents',
+        text: 'Child dependents are individuals 17 years of age or less.'
+    },
+    help: true,
     prepend: false
 }
 
@@ -257,7 +287,7 @@ const residencyTemplate = {
     },
     tooltip: false,
     options: {
-        'us': 'Continental US',
+        'us': 'Contiguous US',
         'ak': 'Alaska',
         'hi': 'Hawaii'
     },
@@ -266,26 +296,6 @@ const residencyTemplate = {
     spouseDiv: false
 }
 
-const priorityTemplate = {
-    input: 'select',
-    label: 'Priority',
-    id: 'priority',
-    data: {
-        'data-storage': "localStorage"
-    },
-    tooltip: {
-        ariaLabel: 'Help about priority behavior',
-        text: "Prioritizes which borrower's loans the monthly payment will apply to first.&#10;&#10;'None' will calculate as if a single borrower."
-    },
-    options: {
-        'none': 'None',
-        'self': 'Self',
-        'spouse': 'Spouse',
-    },
-    help: true,
-    prepend: false,
-    spouseDiv: true
-}
 
 /* -------------------------------------------------
     RADIO INPUTS
@@ -370,6 +380,45 @@ const filingTemplate = {
                 'data-storage': "localStorage"
             },
             text: 'Separately',
+            checked: false,
+            spouseDiv: true
+        }
+    }
+}
+
+const priorityTemplate = {
+    input: 'radio',
+    divClass: 'spouseDiv',
+    legendId: 'priority-legend',
+    legendLabel: 'Whose loans are priority?',
+    radios: {
+        'priority_self': {
+            name: 'priority',
+            value: 'self',
+            data: {
+                'data-storage': "localStorage"
+            },
+            text: 'Self',
+            checked: true,
+            spouseDiv: true
+        },
+        'priority_spouse' : {
+            name: 'priority',
+            value: 'spouse',
+            data: {
+                'data-storage': "localStorage"
+            },
+            text: 'Spouse',
+            checked: false,
+            spouseDiv: true
+        },
+        'priority_both' : {
+            name: 'priority',
+            value: 'both',
+            data: {
+                'data-storage': "localStorage"
+            },
+            text: 'Both',
             checked: false,
             spouseDiv: true
         }
@@ -586,20 +635,28 @@ const familyTemplate = {
     1: {
         comment: null,
         id: 'familyInfo',
-        class: 'row-2',
+        class: 'row-3',
         fields: {
             familySizeTemplate,
-            residencyTemplate,
-            priorityTemplate
+            dependentTemplate,
+            residencyTemplate
         }
     },
     2: {
         comment: null,
-        id: 'radios',
-        class: 'row-1',
+        id: 'radios-top',
+        class: 'row-1 radios',
         fields: {
             marriedRadioTemplate,
-            filingTemplate
+            filingTemplate,
+        }
+    },
+    3: {
+        comment: null,
+        id: 'radios-bottom',
+        class: 'row-1 radios spouseDiv',
+        fields: {
+            priorityTemplate
         }
     }
 }

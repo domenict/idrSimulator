@@ -399,7 +399,7 @@ button:focus-visible {
     height: var(--space-5);
     display: block;
     flex-shrink: 0;
-    margin: 0 0 calc(var(--space-1) * 0.5) calc(var(--space-1) * -0.5);
+    margin: 0 0 calc(var(--space-1) * -0.5) calc(var(--space-1) * -0.5);
 }
 
 .help-wrapper {
@@ -467,15 +467,14 @@ button:focus-visible {
     position: absolute;
     justify-content: left;
     align-items: center;
-    width: fit-content;
-    min-width: 11.75rem;
+    width: max-content;
     height: fit-content;
     line-height: var(--line-height-input);
-    z-index: 999;
+    z-index: calc(var(--z-tooltip) - 1);
     inset: 0;
     top: 100%;
     margin: var(--space-3) 0 0 calc(var(--space-3) * -0.75);
-    padding: var(--space-3) 0 var(--space-3) calc(var(--space-9) * 1.1875);
+    padding: var(--space-3) var(--space-4) var(--space-3) calc(var(--space-9) * 1.1875);
     background: var(--color-bg-tooltip);
     color: var(--color-font-contrast);
     font-size: var(--font-size-xs);
@@ -628,6 +627,7 @@ section {
 }
 
 .spouseDiv, #spouseBlock { display: none; }
+[aria-labelledby="family-heading"] { padding-bottom: var(--space-5); }
 
 button[type="submit"] {
     padding: calc(var(--space-3) * 0.8);
@@ -885,13 +885,12 @@ input::placeholder { color:var(--color-font-pholder); }
 /* -------------------------------------------------
     RADIOS
 ------------------------------------------------- */
-#radios {
+.radios {
     display: grid;
     gap: var(--space-2);
-    padding-bottom: var(--space-3);
 }
 
-.radio-field { margin: 0; padding: 0; }
+.radio-field { margin: 0; padding: calc(var(--space-1) * 0.5) 0 0 0; }
 .marriedDiv { margin-right: var(--space-2); }
 
 .radio-group {
@@ -1185,10 +1184,12 @@ input::placeholder { color:var(--color-font-pholder); }
 
     .field input,
     .select-trigger,
-    .select-dropdown li {
+    .select-dropdown li,
+    .loan-table input {
         font-size: var(--font-size-med);
     }
 
+    .error-message { font-size: calc(var(--font-size-sm-med) * 0.8); }
     .radio-group legend {font-size: var(--font-size-sm-med); }
 
     .loan-table td:nth-child(2)::before,
@@ -1212,6 +1213,7 @@ input::placeholder { color:var(--color-font-pholder); }
     }
 
     .loan-table td input { width: 100%; }
+
 }
 
 /* Supports recommended minimum 320px but smoother transition at 330px  */
@@ -1223,7 +1225,8 @@ input::placeholder { color:var(--color-font-pholder); }
 
     .field input,
     .select-trigger,
-    .select-dropdown li {
+    .select-dropdown li,
+    .loan-table input {
         font-size: var(--font-size-sm-med);
     }
 }

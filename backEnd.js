@@ -17,9 +17,9 @@ Number.prototype.roundDecimals = function roundDecimals(places) {
 function calculatePayments(data) {
     let output, basicInfoBase, loansBase;
     let year = 0;
-    const basicInfo     = { self: {}};
-    const loans         = { self: {}};
-    const idrHistory    = {};
+    const basicInfo         = { self: {}};
+    const loans             = { self: {}};
+    const idrHistory        = {};
 
     const sortedData = Object.keys(data).sort().reduce((obj, key) => {
         obj[key] = data[key];
@@ -33,8 +33,7 @@ function calculatePayments(data) {
     loansBase = JSON.parse(JSON.stringify(loans));
 
     calculateMinimumPayments(basicInfo, loans, year, idrHistory);
-    console.log(loans);
-    console.log(idrHistory);
+    const repaymentOrders = getRepaymentOrders(basicInfo, loans);
 
     return JSON.stringify(new Date());
 }
@@ -265,7 +264,11 @@ function inputValidation(data, basicInfo, loans) {
             const reduceInterest = basicInfo[borrower]['interestReduction'];
             if (reduceInterest) loan[2] = Math.max(0, loan[2] - 0.25);
     
-            loans[borrower][loanNumber] = [...loan];
+            loans[borrower][loanNumber] = {
+                principal: loan[0],
+                interestAccrual: loan[1],
+                interestRate: loan[2]
+            };
             remainingKeys.splice(0,3);
             lastBorrower = borrower;
             loanNumber++;
@@ -332,9 +335,9 @@ function calculateMinimumPayments(basicInfo, loans, year, saveToHistory) {
         let total = 0;
         const keys = Object.keys(loans[borrower]);
         for (let i = 0; i < keys.length; i++) {
-            const principal = loans[borrower][keys[i]][0];
-            const interest = loans[borrower][keys[i]][1];
-            total += principal + interest;
+            const principal = loans[borrower][keys[i]].principal;
+            const interestAccrual = loans[borrower][keys[i]].interestAccrual;
+            total += principal + interestAccrual;
         }
         return total;
     }
@@ -362,9 +365,9 @@ function calculateMinimumPayments(basicInfo, loans, year, saveToHistory) {
         const std = (loans) => {
             let totalMonthly = 0;
             for (const id in loans) {
-                const [principal, interest, ratePercent] = loans[id];
-                const capitalized = principal + interest;
-                const rate = ratePercent / 100;
+                const { principal, interestAccrual, interestRate } = loans[id];
+                const capitalized = principal + interestAccrual;
+                const rate = interestRate / 100;
                 totalMonthly += capitalized * (rate / 12) / (1 - Math.pow(1 + rate / 12, -120));
             }
             return Math.max(50, totalMonthly); // $50 minimum per borrower
@@ -392,7 +395,7 @@ function calculateMinimumPayments(basicInfo, loans, year, saveToHistory) {
         const loanLength = Object.keys(borrowerLoans).length;
         for (const loan in borrowerLoans) {
             const loanArr = borrowerLoans[loan];
-            const loanSum = loanArr[0] + loanArr[1]; // principal + interest
+            const loanSum = loanArr.principal + loanArr.interestAccrual; // principal + interest
     
             const shareOfLoanTotal = loanSum / totalLoanSum;
             let shareOfPayment;
@@ -404,18 +407,136 @@ function calculateMinimumPayments(basicInfo, loans, year, saveToHistory) {
                 remainingPayment -= shareOfPayment;
             }
     
-            if (loanArr[3] === undefined) {
-                loanArr.push(shareOfPayment)
-            }  else {
-                loanArr[3] = shareOfPayment;
-            } 
+            loanArr.minPayment = shareOfPayment;
             i++;
         }
     }
 }
 
 
+/* -------------------------------------------------
+    HEURISTIC REPAYMENT ORDERING
+------------------------------------------------- */
+// Heuristic approach to generate repayment orders with methods that will likely reduce total repayment amount
+// This is only generated once at with base user input and does not adjust as payments are simulated
+function getRepaymentOrders(basicInfo, loans) { 
+    // Highest interest rate, tiebreaks are lowest balance or highest monthly accrual if highest rate is shared
+    const findAvalancheLowestBalance = (loanPool) => { return findAvalanche(loanPool, 'balance'); }
+    const findAvalancheHighestAccrual = (loanPool) => { return findAvalanche(loanPool, 'accrual'); }
+    function findAvalanche(loanPool, tieBreak) {
+        let priorityLoanIndex = 0;
+        let priorityLoanRate = loanPool[0].data.interestRate;
+        let priorityLoanBalance = loanPool[0].data.principal + loanPool[0].data.interestAccrual;
+        let priorityHighestAccrual = priorityLoanRate / 100 * priorityLoanBalance;
 
+        for (let i = 1; i < loanPool.length; i++) {
+            const loanRate = loanPool[i].data.interestRate;
+            const loanBalance = loanPool[i].data.principal + loanPool[i].data.interestAccrual;
+            const loanHighestAccrual = loanRate / 100 * loanBalance;
+            if (loanRate >= priorityLoanRate) {
+                if (tieBreak === 'balance' && loanRate === priorityLoanRate && loanBalance > priorityLoanBalance) {
+                    continue;
+                }
+                if (tieBreak === 'accrual' && loanRate === priorityLoanRate && loanHighestAccrual < priorityHighestAccrual) {
+                    continue;
+                }
+
+                priorityLoanIndex = i;
+                priorityLoanRate = loanRate;
+                priorityLoanBalance = loanBalance;
+                priorityHighestAccrual = loanHighestAccrual;
+            }
+        }
+        return priorityLoanIndex;      
+    }
+
+    // Prioritizes loan generating the most interest
+    const findImmediateBleed = (loanPool) => {          
+        let priorityLoanIndex = 0;
+        let priorityHighestAccrual = loanPool[0].data.interestRate / 100 * loanPool[0].data.principal;
+        for (let i = 1; i < loanPool.length; i++) {
+            const loanHighestAccrual = loanPool[i].data.interestRate / 100 * loanPool[i].data.principal;
+            if (loanHighestAccrual > priorityHighestAccrual) {
+                priorityLoanIndex = i;
+                priorityHighestAccrual = loanHighestAccrual;
+            }
+        }
+        return priorityLoanIndex;   
+    }
+
+    // Prioritizes loan with largest min payment
+    const findHighestMinPayment = (loanPool)=> {               
+        let priorityLoanIndex = 0;
+        let priorityHighestMinPayment = loanPool[0].data.minPayment;
+        for (let i = 1; i < loanPool.length; i++) {
+            const loanHighestMinPayment = loanPool[i].data.minPayment
+            if (loanHighestMinPayment > priorityHighestMinPayment) {
+                priorityLoanIndex = i;
+                priorityHighestMinPayment = loanHighestMinPayment;
+            }
+        }
+        return priorityLoanIndex;   
+    }
+
+    // Lowest Balance First
+    const findSnowball = (loanPool) => {                
+        let priorityLoanIndex = 0;
+        let priorityLoanBalance = loanPool[0].data.principal + loanPool[0].data.interestAccrual;
+        for (let i = 1; i < loanPool.length; i++) {
+            const loanBalance = loanPool[i].data.principal + loanPool[i].data.interestAccrual;
+            if (loanBalance < priorityLoanBalance) {
+                priorityLoanIndex = i;
+                priorityLoanBalance = loanBalance;
+            }
+        }
+        return priorityLoanIndex;   
+    }
+
+
+    /* -------------------- REPAYMENT ORDER HEURISTICS STARTS HERE -------------------- */
+    const { priority, married, filingJointly } = basicInfo;
+    const heuristics = {
+        debtAvalancheLowestFirst: findAvalancheLowestBalance,
+        debtAvalancheHighestAccrual: findAvalancheHighestAccrual,
+        immediateBleed: findImmediateBleed,
+        highestMinPayment: findHighestMinPayment,
+        debtSnowball: findSnowball
+    };
+    const repaymentOrders = {
+        debtAvalancheLowestFirst: [],
+        debtAvalancheHighestAccrual: [],
+        immediateBleed: [],
+        highestMinPayment: [],
+        debtSnowball: [],
+    };
+
+    Object.keys(repaymentOrders).forEach(hKey => {
+        let primaryPool = [];
+        let secondaryPool = [];
+        
+        const selfLoans = Object.entries(loans.self).map(([id, val]) => ({id, owner: 'self', data: val}));
+        const spouseLoans = (loans.spouse) ? Object.entries(loans.spouse).map(([id, val]) => ({id, owner: 'spouse', data: val})) : [];
+        if (priority === 'both' || !married) {
+            primaryPool = [...selfLoans, ...spouseLoans];
+        } else {
+            primaryPool = (priority === 'self') ? [...selfLoans] : [...spouseLoans];
+            secondaryPool = (priority === 'self') ? [...spouseLoans]: [...selfLoans];
+        }
+        
+        while (primaryPool.length > 0) {
+            const bestIdx = heuristics[hKey](primaryPool);
+            const picked = primaryPool.splice(bestIdx, 1)[0];
+            repaymentOrders[hKey].push(picked);
+        }
+        while (secondaryPool.length > 0) {
+            const bestIdx = heuristics[hKey](secondaryPool);
+            const picked = secondaryPool.splice(bestIdx, 1)[0];
+            repaymentOrders[hKey].push(picked);
+        }
+    });
+
+    return repaymentOrders;
+} 
 
 
 

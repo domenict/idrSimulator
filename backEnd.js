@@ -34,6 +34,7 @@ function calculatePayments(data) {
 
     calculateMinimumPayments(basicInfo, loans, year, idrHistory);
     const repaymentOrders = getRepaymentOrders(basicInfo, loans);
+    console.log(repaymentOrders);
 
     return JSON.stringify(new Date());
 }
@@ -420,81 +421,63 @@ function calculateMinimumPayments(basicInfo, loans, year, saveToHistory) {
 // Heuristic approach to generate repayment orders with methods that will likely reduce total repayment amount
 // This is only generated once at with base user input and does not adjust as payments are simulated
 function getRepaymentOrders(basicInfo, loans) { 
-    // Highest interest rate, tiebreaks are lowest balance or highest monthly accrual if highest rate is shared
-    const findAvalancheLowestBalance = (loanPool) => { return findAvalanche(loanPool, 'balance'); }
-    const findAvalancheHighestAccrual = (loanPool) => { return findAvalanche(loanPool, 'accrual'); }
-    function findAvalanche(loanPool, tieBreak) {
-        let priorityLoanIndex = 0;
-        let priorityLoanRate = loanPool[0].data.interestRate;
-        let priorityLoanBalance = loanPool[0].data.principal + loanPool[0].data.interestAccrual;
-        let priorityHighestAccrual = priorityLoanRate / 100 * priorityLoanBalance;
-
-        for (let i = 1; i < loanPool.length; i++) {
-            const loanRate = loanPool[i].data.interestRate;
-            const loanBalance = loanPool[i].data.principal + loanPool[i].data.interestAccrual;
-            const loanHighestAccrual = loanRate / 100 * loanBalance;
-            if (loanRate >= priorityLoanRate) {
-                if (tieBreak === 'balance' && loanRate === priorityLoanRate && loanBalance > priorityLoanBalance) {
-                    continue;
-                }
-                if (tieBreak === 'accrual' && loanRate === priorityLoanRate && loanHighestAccrual < priorityHighestAccrual) {
-                    continue;
-                }
-
-                priorityLoanIndex = i;
-                priorityLoanRate = loanRate;
-                priorityLoanBalance = loanBalance;
-                priorityHighestAccrual = loanHighestAccrual;
-            }
+    // Highest interest rate, lowest balance
+    const findAvalancheLowestBalance = (loanPool) => (loanPool.sort((a,b) => {
+        if (b.data.interestRate !== a.data.interestRate) {
+            return b.data.interestRate - a.data.interestRate;
         }
-        return priorityLoanIndex;      
-    }
+
+        const aBalance = a.data.principal + a.data.interestAccrual;
+        const bBalance = b.data.principal + b.data.interestAccrual;
+        return aBalance - bBalance;
+    }));
+
+    // Highest interest rate, highest interest accrual
+    const findAvalancheHighestAccrual = (loanPool) => (loanPool.sort((a,b) => {
+        if (b.data.interestRate !== a.data.interestRate) {
+            return b.data.interestRate - a.data.interestRate;
+        }
+
+        const aAccrual = (a.data.interestRate / 100 * a.data.principal);
+        const bAccrual = (b.data.interestRate / 100 * b.data.principal);
+        return bAccrual - aAccrual;
+    }));
 
     // Prioritizes loan generating the most interest
-    const findImmediateBleed = (loanPool) => {          
-        let priorityLoanIndex = 0;
-        let priorityHighestAccrual = loanPool[0].data.interestRate / 100 * loanPool[0].data.principal;
-        for (let i = 1; i < loanPool.length; i++) {
-            const loanHighestAccrual = loanPool[i].data.interestRate / 100 * loanPool[i].data.principal;
-            if (loanHighestAccrual > priorityHighestAccrual) {
-                priorityLoanIndex = i;
-                priorityHighestAccrual = loanHighestAccrual;
-            }
-        }
-        return priorityLoanIndex;   
-    }
-
-    // Prioritizes loan with largest min payment
-    const findHighestMinPayment = (loanPool)=> {               
-        let priorityLoanIndex = 0;
-        let priorityHighestMinPayment = loanPool[0].data.minPayment;
-        for (let i = 1; i < loanPool.length; i++) {
-            const loanHighestMinPayment = loanPool[i].data.minPayment
-            if (loanHighestMinPayment > priorityHighestMinPayment) {
-                priorityLoanIndex = i;
-                priorityHighestMinPayment = loanHighestMinPayment;
-            }
-        }
-        return priorityLoanIndex;   
-    }
+    const findImmediateBleed = (loanPool) => (loanPool.sort((a,b) => {
+        const aAccrual = (a.data.interestRate / 100 * a.data.principal);
+        const bAccrual = (b.data.interestRate / 100 * b.data.principal);
+        return bAccrual - aAccrual;
+    }));
 
     // Lowest Balance First
-    const findSnowball = (loanPool) => {                
-        let priorityLoanIndex = 0;
-        let priorityLoanBalance = loanPool[0].data.principal + loanPool[0].data.interestAccrual;
-        for (let i = 1; i < loanPool.length; i++) {
-            const loanBalance = loanPool[i].data.principal + loanPool[i].data.interestAccrual;
-            if (loanBalance < priorityLoanBalance) {
-                priorityLoanIndex = i;
-                priorityLoanBalance = loanBalance;
-            }
-        }
-        return priorityLoanIndex;   
-    }
+    const findSnowball = (loanPool) => (loanPool.sort((a,b) => {
+        const aBalance = a.data.principal + a.data.interestAccrual;
+        const bBalance = b.data.principal + b.data.interestAccrual;
+        return aBalance - bBalance;
+    }));
 
+    // Prioritizes loan with largest min payment
+    const findHighestMinPayment = (loanPool) => (loanPool.sort((a,b) => {
+        return b.data.minPayment - a.data.minPayment;
+    }));
 
+    
     /* -------------------- REPAYMENT ORDER HEURISTICS STARTS HERE -------------------- */
-    const { priority, married, filingJointly } = basicInfo;
+    const { priority, married } = basicInfo;
+    const selfLoans = Object.entries(loans.self).map(([id, val]) => ({id, owner: 'self', data: val}));
+    const spouseLoans = (loans.spouse) ? Object.entries(loans.spouse).map(([id, val]) => ({id, owner: 'spouse', data: val})) : [];
+    
+    let primarySource = [];
+    let secondarySource = []; 
+    if (priority === 'both' || !married) {
+        primarySource = [...selfLoans, ...spouseLoans];
+    } else {
+        primarySource = (priority === 'self') ? [...selfLoans] : [...spouseLoans];
+        secondarySource = (priority === 'self') ? [...spouseLoans]: [...selfLoans];
+    }
+    
+    const repaymentOrders = {};
     const heuristics = {
         debtAvalancheLowestFirst: findAvalancheLowestBalance,
         debtAvalancheHighestAccrual: findAvalancheHighestAccrual,
@@ -502,39 +485,12 @@ function getRepaymentOrders(basicInfo, loans) {
         highestMinPayment: findHighestMinPayment,
         debtSnowball: findSnowball
     };
-    const repaymentOrders = {
-        debtAvalancheLowestFirst: [],
-        debtAvalancheHighestAccrual: [],
-        immediateBleed: [],
-        highestMinPayment: [],
-        debtSnowball: [],
-    };
-
-    Object.keys(repaymentOrders).forEach(hKey => {
-        let primaryPool = [];
-        let secondaryPool = [];
-        
-        const selfLoans = Object.entries(loans.self).map(([id, val]) => ({id, owner: 'self', data: val}));
-        const spouseLoans = (loans.spouse) ? Object.entries(loans.spouse).map(([id, val]) => ({id, owner: 'spouse', data: val})) : [];
-        if (priority === 'both' || !married) {
-            primaryPool = [...selfLoans, ...spouseLoans];
-        } else {
-            primaryPool = (priority === 'self') ? [...selfLoans] : [...spouseLoans];
-            secondaryPool = (priority === 'self') ? [...spouseLoans]: [...selfLoans];
-        }
-        
-        while (primaryPool.length > 0) {
-            const bestIdx = heuristics[hKey](primaryPool);
-            const picked = primaryPool.splice(bestIdx, 1)[0];
-            repaymentOrders[hKey].push(picked);
-        }
-        while (secondaryPool.length > 0) {
-            const bestIdx = heuristics[hKey](secondaryPool);
-            const picked = secondaryPool.splice(bestIdx, 1)[0];
-            repaymentOrders[hKey].push(picked);
-        }
+    Object.keys(heuristics).forEach(hKey => {
+        const primarySorted = heuristics[hKey]([...primarySource]);
+        const secondarySorted = heuristics[hKey]([...secondarySource]);
+        repaymentOrders[hKey] = [...primarySorted, ...secondarySorted];
     });
-
+    
     return repaymentOrders;
 } 
 

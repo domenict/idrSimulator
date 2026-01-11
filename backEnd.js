@@ -1,10 +1,36 @@
 /* -------------------------------------------------
-    GLOBAL VARIABLES / PROTOTYPES
+    GLOBAL VARIABLES / PROTOTYPES (F0R 2026)
 ------------------------------------------------- */
 // Update annually via https://aspe.hhs.gov/topics/poverty-economic-mobility/poverty-guidelines
-const BASE_2025 = { ak: 19550, hi: 17990, us: 15650 };
-const INCREMENT_2025 = { ak: 6880, hi: 6330, us: 5500 };
-const ANNUAL_GROWTH_RATE = 0.025; // Rough annual poverty line growth over last 30 years
+const BASE_POVERTY = { ak: 19550, hi: 17990, us: 15650 };
+const INCREMENT_POVERTY = { ak: 6880, hi: 6330, us: 5500 };
+const CPI_U_MULTIPLIER = 1.028; // "Consumer Price Index for All Urban Consumers" estimate for next 30 years
+const IRS_LOAN = { 'rate': 0.07, 'monthlyPenalty': 0.0025, 'maxDuration': 72 };
+const STANDARD_DEDUCTIONS = {
+    'SINGLE'    : 16100,
+    'HOH'       : 24150,
+    'MARRIED'   : 32200,
+}
+const INCOME_BRACKETS = {
+    'single': [
+        {'min': 0,          'max': 12400,       'rate': 0.10 },
+        {'min': 12401,      'max': 50400,       'rate': 0.12 },
+        {'min': 50401,      'max': 105700,      'rate': 0.22 },
+        {'min': 105701,     'max': 201775,      'rate': 0.24 },
+        {'min': 201776,     'max': 256225,      'rate': 0.32 },
+        {'min': 256226,     'max': 640600,      'rate': 0.35 },
+        {'min': 640601,     'max': Infinity,    'rate': 0.37 },
+    ],
+    'married': [
+        {'min': 0,          'max': 24800,       'rate': 0.10 },
+        {'min': 24801,      'max': 100800,      'rate': 0.12 },
+        {'min': 100801,     'max': 211400,      'rate': 0.22 },
+        {'min': 211401,     'max': 403550,      'rate': 0.24 },
+        {'min': 403551,     'max': 512450,      'rate': 0.32 },
+        {'min': 512451,     'max': 768700,      'rate': 0.35 },
+        {'min': 768701,     'max': Infinity,    'rate': 0.37 },
+    ]
+}
 
 Number.prototype.roundDecimals = function roundDecimals(places) {
     const offset = Math.pow(10, places);
@@ -15,34 +41,35 @@ Number.prototype.roundDecimals = function roundDecimals(places) {
     MAIN
 ------------------------------------------------- */
 function calculatePayments(data) {
-    let output, basicInfoBase, loansBase;
-    let year = 0;
-    const basicInfo         = { self: {}};
-    const loans             = { self: {}};
-    const idrHistory        = {};
-
+    const basicInfo = { self: {}};
+    const loans     = { self: {}};
     const sortedData = Object.keys(data).sort().reduce((obj, key) => {
         obj[key] = data[key];
         return obj; 
     }, {});
-    const inputValidated = inputValidation(sortedData, basicInfo, loans);
+    const inputValidated = inputValidation(sortedData, basicInfo, loans); //basicInfo & loans populated with user input
     if (!inputValidated) { 
         return "There was an error processing your request.\nPlease refresh the page and try again.";
     }
-    basicInfoBase = JSON.parse(JSON.stringify(basicInfo));
-    loansBase = JSON.parse(JSON.stringify(loans));
 
-    calculateMinimumPayments(basicInfo, loans, year, idrHistory);
+    //Function adds/modifies loans object with minimum payment of each loan
+    const firstYearPlanEstimates = calculateMinimumPayments(basicInfo, loans);
+
+    // Outputs repayment orders likely to result in minimizing total loan payment over the life of the loans
+    // This is only generated once with base user input and is not updated as repayment is simulated
+    // Heuristics:
+    //      Avalanche: Lowest Balance   - Highest interest rate, lowest balance
+    //      Avalanche: Highest Accrual  - Highest interest rate, highest interest accrual
+    //      Immediate Bleed             - Prioritizes loan generating the most interest
+    //      Snowball                    - Prioritizes loan with the lowest balance
+    //      Highest Minimum Payment     - Prioritizes loan with the largest minimum payment
     const repaymentOrders = getRepaymentOrders(basicInfo, loans);
-    console.log(repaymentOrders);
+    const simulatedPayments = simulateRepayment(basicInfo, loans, repaymentOrders);
+    console.log(`BREAKDOWN: ${new Date()}`);
+    console.log(simulatedPayments);
 
     return JSON.stringify(new Date());
 }
-/* FOR TESTING
-    node backEnd.js "$(cat ../data_married.txt)"
-    */
-    const input = JSON.parse(process.argv[2]);
-    calculatePayments(input);
 
 
 
@@ -56,13 +83,13 @@ function inputValidation(data, basicInfo, loans) {
     // "marriedDependent" appended as last index if applicable
     const marriedMap = [["married", "boolean", ["no","yes"]]];
     const primaryInputMap = [
-        ["fixedMonthly", "boolean", ["no","yes"]],
         ["self_repaymentPlan", "string", ["old", "new", "rap"]],
         ["spouse_repaymentPlan", "string", ["old", "new", "rap"], "marriedDependent"],
         ["dependents", "number", "integer", 0, 97]
     ];
     const secondaryInputMap = [
-        ["monthlyPayment", "number", "float", 0, 9999999999999.99],
+        ["monthlyOverpayment", "number", "float", 0, 9999999999999.99],
+        ["fixedOverpayments", "boolean", ["no","yes"]],
         ["self_agi", "number", "float", 0, 9999999999999.99],
         ["self_annualGrowth", "number", "float", 0, 99.99],
         ["self_qualifiedPayments", "number", "integer", 0, 360],
@@ -98,12 +125,6 @@ function inputValidation(data, basicInfo, loans) {
     // primaryInputMap next, modifies secondary map
     pass = validateInputMap(primaryInputMap);
     if (!pass) return false;
-    if (basicInfo.fixedMonthly) {
-        const selfAnnualGrowthIndex = getInputMapIndex(secondaryInputMap, "self_annualGrowth");
-        const spouseAnnualGrowthIndex = getInputMapIndex(secondaryInputMap, "spouse_annualGrowth"); 
-        secondaryInputMap[selfAnnualGrowthIndex][4] = 0;
-        secondaryInputMap[spouseAnnualGrowthIndex][4] = 0;
-    }
     if (basicInfo.dependents || married) {
         const familySizeIndex = getInputMapIndex(secondaryInputMap, "familySize");
         secondaryInputMap[familySizeIndex][3] = 1 + basicInfo.dependents;
@@ -125,7 +146,6 @@ function inputValidation(data, basicInfo, loans) {
     /* -------------------------------------------------
         INPUT VALIDATION FUNCTIONS
     ------------------------------------------------- */
-    // Validates and extract expected keys and values from inputMaps
     function validateInputMap(inputMap) {
         for (let i = 0; i < inputMap.length; i++) {
             let key = inputMap[i][0];
@@ -183,7 +203,6 @@ function inputValidation(data, basicInfo, loans) {
         return true;
     }
 
-    // Helper to get an index of a key
     function getInputMapIndex(array, key) {
         let i = 0;
         while (i < array.length) {
@@ -192,7 +211,6 @@ function inputValidation(data, basicInfo, loans) {
         }
     }
 
-    // Helper to update borrowers qualified payment max based on repayment plan
     function updateBorrowerQualifiedPaymentMax(borrower, planKey, paymentsKey, planMap) {
         const paymentsKeyIndex = getInputMapIndex(secondaryInputMap, paymentsKey);
         const borrowerPlan = basicInfo[borrower][planKey];
@@ -200,7 +218,6 @@ function inputValidation(data, basicInfo, loans) {
         secondaryInputMap[paymentsKeyIndex][4] = planMap[newMaxIndex];
     }
 
-    // Sorts remaining keys catching any injections/html modifications
     function filterRemainingKeys(data) {
         let unsortedRemainingKeys = Object.keys(data); // Needs to be sorted how we need it, currently sorted lexicographically
         let remainingKeys = unsortedRemainingKeys.sort((a, b) => { 
@@ -228,7 +245,6 @@ function inputValidation(data, basicInfo, loans) {
         return remainingKeys;
     }
 
-    // Extracts loan data into a separate 3D array for ease of future processing
     function extractLoanData(remainingKeys, loanInputMap) {
         let loanNumber = 1;
         let lastBorrower;
@@ -284,9 +300,9 @@ function inputValidation(data, basicInfo, loans) {
 ------------------------------------------------- */
 // Married Filing Jointly = Combined AGI prorated to share of the total debt, spouse always part of family size
 // Married Filing Separately = Individual responsibility, borrower with higher AGI claims dependents while other has family size of 2
-function calculateMinimumPayments(basicInfo, loans, year, saveToHistory) {
+function calculateMinimumPayments(basicInfo, loans, year = 0) {
+    const saveToHistory = {};
     const loanSums = { 'self': getLoanSum(loans, 'self') };
-    saveToHistory[year] = {};
 
     if (basicInfo.married) {
         loanSums['spouse'] = getLoanSum(loans, 'spouse');
@@ -311,7 +327,7 @@ function calculateMinimumPayments(basicInfo, loans, year, saveToHistory) {
             }
 
             const planOptions = calculatePaymentPlans(borrowerLoans, AGI, portionOfPayment, povertyLine, dependents);
-            saveToHistory[year][borrower] = planOptions;
+            saveToHistory[borrower] = planOptions;
             const monthlyPayment = planOptions[plan];
             distributeMonthlyPaymentToLoans(borrower, loans, loanSums[borrower], monthlyPayment);
         });
@@ -324,32 +340,24 @@ function calculateMinimumPayments(basicInfo, loans, year, saveToHistory) {
         const dependents = basicInfo.dependents;
 
         const planOptions = calculatePaymentPlans(borrowerLoans, AGI, portionOfPayment, povertyLine, dependents);
-        saveToHistory[year]['self'] = planOptions;
+        saveToHistory['self'] = planOptions;
         const monthlyPayment = planOptions[plan];
         distributeMonthlyPaymentToLoans('self', loans, loanSums['self'], monthlyPayment);
     }
 
+    return saveToHistory;
+
+
     /* -------------------------------------------------
         IDR CERTIFICATION FUNCTIONS
     ------------------------------------------------- */
-    function getLoanSum(loans, borrower) {
-        let total = 0;
-        const keys = Object.keys(loans[borrower]);
-        for (let i = 0; i < keys.length; i++) {
-            const principal = loans[borrower][keys[i]].principal;
-            const interestAccrual = loans[borrower][keys[i]].interestAccrual;
-            total += principal + interestAccrual;
-        }
-        return total;
-    }
-    
     function calculatePovertyGuidelines(familySize = 1, residency = 'us', years = 0) {
         const res = residency.toLowerCase();
-        const base = BASE_2025[res];
-        const inc = INCREMENT_2025[res];
+        const base = BASE_POVERTY[res];
+        const inc = INCREMENT_POVERTY[res];
     
         const amount = base + (familySize - 1) * inc;
-        const multiplier = Math.pow(1 + ANNUAL_GROWTH_RATE, years);
+        const multiplier = Math.pow(CPI_U_MULTIPLIER, years);
         return Math.round(amount * multiplier);
     }
     
@@ -413,15 +421,23 @@ function calculateMinimumPayments(basicInfo, loans, year, saveToHistory) {
         }
     }
 }
+function getLoanSum(loans, borrower) {
+    let total = 0;
+    const keys = Object.keys(loans[borrower]);
+    for (let i = 0; i < keys.length; i++) {
+        const principal = loans[borrower][keys[i]].principal;
+        const interestAccrual = loans[borrower][keys[i]].interestAccrual;
+        total += principal + interestAccrual;
+    }
+    return total;
+}
 
 
 /* -------------------------------------------------
     HEURISTIC REPAYMENT ORDERING
 ------------------------------------------------- */
-// Heuristic approach to generate repayment orders with methods that will likely reduce total repayment amount
-// This is only generated once at with base user input and does not adjust as payments are simulated
 function getRepaymentOrders(basicInfo, loans) { 
-    // Highest interest rate, lowest balance
+
     const findAvalancheLowestBalance = (loanPool) => (loanPool.sort((a,b) => {
         if (b.data.interestRate !== a.data.interestRate) {
             return b.data.interestRate - a.data.interestRate;
@@ -432,7 +448,6 @@ function getRepaymentOrders(basicInfo, loans) {
         return aBalance - bBalance;
     }));
 
-    // Highest interest rate, highest interest accrual
     const findAvalancheHighestAccrual = (loanPool) => (loanPool.sort((a,b) => {
         if (b.data.interestRate !== a.data.interestRate) {
             return b.data.interestRate - a.data.interestRate;
@@ -443,21 +458,18 @@ function getRepaymentOrders(basicInfo, loans) {
         return bAccrual - aAccrual;
     }));
 
-    // Prioritizes loan generating the most interest
     const findImmediateBleed = (loanPool) => (loanPool.sort((a,b) => {
         const aAccrual = (a.data.interestRate / 100 * a.data.principal);
         const bAccrual = (b.data.interestRate / 100 * b.data.principal);
         return bAccrual - aAccrual;
     }));
 
-    // Lowest Balance First
     const findSnowball = (loanPool) => (loanPool.sort((a,b) => {
         const aBalance = a.data.principal + a.data.interestAccrual;
         const bBalance = b.data.principal + b.data.interestAccrual;
         return aBalance - bBalance;
     }));
-
-    // Prioritizes loan with largest min payment
+    
     const findHighestMinPayment = (loanPool) => (loanPool.sort((a,b) => {
         return b.data.minPayment - a.data.minPayment;
     }));
@@ -490,63 +502,412 @@ function getRepaymentOrders(basicInfo, loans) {
         const secondarySorted = heuristics[hKey]([...secondarySource]);
         repaymentOrders[hKey] = [...primarySorted, ...secondarySorted];
     });
-    
+
+    for (const order in repaymentOrders) {
+        for (const key of repaymentOrders[order]) {
+            delete key.data;
+        }
+    }
     return repaymentOrders;
 } 
 
 
+/* -------------------------------------------------
+    SIMULATE REPAYMENT
+------------------------------------------------- */
+function simulateRepayment(basicInfo_BASE, loans_BASE, repaymentOrders_BASE) {
+    let optimalHeuristic = null;
+    const repaymentSimulations = {};
+    const borrowers = Object.keys(loans_BASE);
+    const monthlyOverpaymentProportion = getMonthlyOverpaymentProportion(basicInfo_BASE);
+    
+    // input args are deeply cloned as they are modified throughout each heuristic simulation
+    const repaymentOrders = structuredClone(repaymentOrders_BASE);
+    Object.entries(repaymentOrders).forEach(currentOrder => {
+        const basicInfo = structuredClone(basicInfo_BASE);
+        const loans = structuredClone(loans_BASE);
+        
+        let order = currentOrder[1];
+        const orderID = currentOrder[0];
+        repaymentSimulations[orderID] = { 
+            'repaymentStrategy': orderID, 
+            'repaymentOrder': structuredClone(order),
+            totals: {}, 
+            simulatedPayments: {} };
+        repaymentSimulations[orderID].totals = Object.fromEntries(borrowers.map(borrower => [borrower, {'status': 'unpaid'}]));
+        const totals = repaymentSimulations[orderID].totals;
+        const simulatedPayments = repaymentSimulations[orderID].simulatedPayments;
 
+        let year = 0;
+        let month = 1;
+        let remainingPayments = getHighestRemainingPayments(basicInfo);
 
+        // Simulates monthly payments
+        while (remainingPayments) {
+            simulatedPayments[month] = {};
+            const thisMonthSimulation = simulatedPayments[month];
 
+            // Anually recertify IDR, update income based on income growth, and update monthlyOverpayment
+            let monthlyOverpayment = basicInfo.monthlyOverpayment;
+            if (month > 12 && month % 12 === 1 ) {
+                year++;
 
+                let familyIncome = 0;
+                borrowers.forEach(borrower => {
+                    const income = basicInfo[borrower].agi;
+                    const growth = basicInfo[borrower].annualGrowth / 100 + 1;
+                    const newAGI = income * growth; 
+                    basicInfo[borrower].agi = newAGI.roundDecimals(2);
+                    familyIncome += newAGI;
+                });
+                calculateMinimumPayments(basicInfo, loans, year);
 
+                if (!basicInfo.fixedOverpayments) {
+                    const newMonthlyOverPayment = (familyIncome * monthlyOverpaymentProportion).roundDecimals(2);
+                    monthlyOverpayment = (newMonthlyOverPayment > monthlyOverpayment) ? newMonthlyOverPayment : monthlyOverpayment;
+                    basicInfo.monthlyOverpayment = monthlyOverpayment;
+                }
+            }
+            
+            // Apply interest accrual and minimum payments
+            let monthlyMinimumPayment = 0;
+            borrowers.forEach(borrower => {
+                thisMonthSimulation[borrower] = {};
+                thisMonthSimulation[borrower].agi = basicInfo[borrower].agi;
 
+                if (totals[borrower].status === 'unpaid') {
+                    let totalAccruedInterest = totals[borrower].totalAccruedInterest || 0;
+                    const borrowerAccrual = applyInterestAccrual(loans[borrower]);
+                    thisMonthSimulation[borrower].monthlyInterest = borrowerAccrual.roundDecimals(2);
+                    totals[borrower].totalAccruedInterest = (totalAccruedInterest + borrowerAccrual).roundDecimals(2);
 
+                    let totalPayment = totals[borrower].totalPayment || 0;
+                    const borrowerMinPayment = applyMinimumPayment(loans[borrower]);
+                    thisMonthSimulation[borrower].minimumPayment = borrowerMinPayment.roundDecimals(2);
+                    thisMonthSimulation[borrower].monthlyPayment = thisMonthSimulation[borrower].minimumPayment;
+                    totals[borrower].totalPayment = (totalPayment + borrowerMinPayment).roundDecimals(2);
+                    monthlyMinimumPayment = (monthlyMinimumPayment + borrowerMinPayment).roundDecimals(2);
+                } else {
+                    thisMonthSimulation[borrower].monthlyInterest = 0;
+                    thisMonthSimulation[borrower].minimumPayment = 0;
+                }
+            });
 
-function taxes2026(AGI, married, dependents) {
-    const medicareRate = .062;
-    const ssRate = .0145;
-    const fedSingleDeduction = 16100;
-    const fedHeadOfHousehold = 24150;
-    const fedMarriedDeduction = 32200;
-    const fedBrackets = [
-        [12400, 24800, .10],
-        [50400, 100800, .12], 
-        [105700, 211400, .22], 
-        [201775, 403550, .24],
-        [256225, 512450, .32],
-        [640600, 768700, .35],
-        [Infinity, Infinity, .37]
-    ]
+            // Apply overpayment
+            let remainingOverpayment = monthlyOverpayment;
+            thisMonthSimulation.overpayedLoans = [];
+            while(order.length > 0 && remainingOverpayment > 0.01) {
+                const loanToApplyOverpayment = order[0];
+                const loanOwner = loanToApplyOverpayment.owner;
+                const loanID = loanToApplyOverpayment.id;
+                const loan = loans[loanOwner][loanID];
 
-    const fedDeduction = (married) ? fedMarriedDeduction : (dependents > 0) ? fedHeadOfHousehold : fedSingleDeduction;
-    const federalTaxable = AGI - fedDeduction;
-    let remainingIncome = federalTaxable;
-    let federalTaxes = 0;
-    for (let i = 0; i < fedBrackets.length; i++) {
-        let thisBracket, bracketRate, lastBracket;
-        const index = (married) ? 1 : 0;
-        thisBracket = fedBrackets[i][index];
-        bracketRate = fedBrackets[i][2];
-        if (i === 0) {
-            lastBracket = 0;
-        } else {
-            lastBracket = fedBrackets[i-1][index];
+                if (loan === undefined || totals[loanOwner].status !== 'unpaid') {
+                    order.shift();
+                    continue;
+                }
+
+                let borrowerTotalPayment = totals[loanOwner].totalPayment;
+                let borrowerMonthlyPayment = thisMonthSimulation[loanOwner].monthlyPayment;
+                let remainingBalance = makePayment(remainingOverpayment, loan);
+                thisMonthSimulation.overpayedLoans.push(loanToApplyOverpayment);
+
+                if (loan.principal === 0 && loan.interestAccrual === 0) {
+                    delete loans[loanOwner][loanID];
+                    order.shift();
+                }
+
+                if (remainingBalance > 0.01) {
+                    const diff = remainingOverpayment - remainingBalance;
+                    totals[loanOwner].totalPayment = (borrowerTotalPayment + diff).roundDecimals(2);
+                    thisMonthSimulation[loanOwner].monthlyPayment = (borrowerMonthlyPayment + diff).roundDecimals(2);
+                    remainingOverpayment = remainingBalance;
+                } else {
+                    totals[loanOwner].totalPayment = (borrowerTotalPayment + remainingOverpayment).roundDecimals(2);
+                    thisMonthSimulation[loanOwner].monthlyPayment = (borrowerMonthlyPayment + remainingOverpayment).roundDecimals(2);
+                    remainingOverpayment = 0;
+                }
+            }
+            if (remainingOverpayment > 0.01) monthlyOverpayment -= remainingOverpayment;
+
+            // Update monthly values and totals
+            let totalRemainingBalance = 0;
+            borrowers.forEach(borrower => {
+                const borrowerRemainingBalance = getLoanSum(loans, borrower);
+                totalRemainingBalance = (totalRemainingBalance + borrowerRemainingBalance).roundDecimals(2);
+                thisMonthSimulation[borrower].totalPayment = totals[borrower].totalPayment;
+                thisMonthSimulation[borrower].totalAccruedInterest = totals[borrower].totalAccruedInterest;
+                thisMonthSimulation[borrower].remainingBalance = borrowerRemainingBalance.roundDecimals(2);
+
+                if (totals[borrower].status === 'unpaid') {
+                    if (thisMonthSimulation[borrower].remainingBalance === 0) {
+                        totals[borrower].status = 'paid';
+                        totals[borrower].paymentDuration = month;
+                    }
+                    if (month === getRemainingPayments(basicInfo, borrower)) {
+                        totals[borrower].status = 'forgiven';
+                        totals[borrower].paymentDuration = month; 
+                    }
+                }
+            });
+            thisMonthSimulation.monthlyOverpayment     = monthlyOverpayment.roundDecimals(2);
+            thisMonthSimulation.familyMinimumPayment   = monthlyMinimumPayment.roundDecimals(2);
+            thisMonthSimulation.familyRemainingBalance = totalRemainingBalance.roundDecimals(2);
+            thisMonthSimulation.familyTotalPayments    = Object.entries(totals).reduce(
+                (total, borrower) => total + borrower[1].totalPayment, 0).roundDecimals(2);
+            thisMonthSimulation.familyTotalAccruedInterest = Object.entries(totals).reduce(
+                (total, borrower) => total + borrower[1].totalAccruedInterest, 0).roundDecimals(2);
+            
+            const borrowersComplete = borrowers.reduce((total, borrower) => {
+                if (totals[borrower].status !== 'unpaid') return total + 1 }, 0) === borrowers.length;
+            if (totalRemainingBalance === 0 || borrowersComplete) break;
+            remainingPayments--;
+            if (!remainingPayments) break;
+            month++;
         }
 
-        if ((thisBracket - lastBracket) < remainingIncome) {
-            let bracketRange =thisBracket - lastBracket
-            federalTaxes += bracketRange * bracketRate;
-            remainingIncome -= bracketRange;
+        // Tax bomb / PSLF
+        let previousBorrowerForgivenessYear = null;
+        let previousBorrowerBalance = 0;
+        borrowers.forEach(borrower => {
+            const forgivenessMonth = Math.min(getRemainingPayments(basicInfo, borrower), month);
+            const forgivenessYear = Math.floor(forgivenessMonth / 12);
+            const remainingBalance = simulatedPayments[forgivenessMonth][borrower].remainingBalance;
+            totals[borrower].remainingBalance = remainingBalance; // Need before tax calculation
+            totals[borrower].agi = basicInfo[borrower].agi
+
+            const sameYearForgiveness = forgivenessYear === previousBorrowerForgivenessYear && totals[borrower].status === 'forgiven';
+            const taxedForgiveness = taxBomb(basicInfo, totals, borrowers, borrower, forgivenessYear, sameYearForgiveness, previousBorrowerBalance);
+            totals[borrower].federalTaxes = taxedForgiveness;
+            totals[borrower].forgiveness = (remainingBalance - taxedForgiveness).roundDecimals(2);
+            totals.sameYearForgiveness = sameYearForgiveness;
+            previousBorrowerForgivenessYear = forgivenessYear;
+            previousBorrowerBalance = remainingBalance;
+
+            const irsMonthlyRate = IRS_LOAN.rate / 12 + IRS_LOAN.monthlyPenalty;
+            const irsCompoundAmountFactor =  Math.pow((1 + irsMonthlyRate), IRS_LOAN.maxDuration);
+            const irsMonthlyPayment = taxedForgiveness * ((irsMonthlyRate * irsCompoundAmountFactor ) /
+                                                          (irsCompoundAmountFactor - 1));
+            const irsInterestAccrual = (irsMonthlyPayment * IRS_LOAN.maxDuration) - taxedForgiveness;
+            totals[borrower].irsSixYearLoanInterestAccrual = irsInterestAccrual.roundDecimals(2);
+  
+            totals[borrower].pslf = {}; 
+            const pslfMonth = Math.max(0, 120 - basicInfo[borrower].qualifiedPayments);
+            const pslfBorrowerHistory = structuredClone(simulatedPayments[pslfMonth][borrower]);
+            const pslfBorrower = totals[borrower].pslf;
+            pslfBorrower.agi = pslfBorrowerHistory.agi;
+            pslfBorrower.totalPayment = pslfBorrowerHistory.totalPayment;
+            pslfBorrower.totalAccruedInterest = pslfBorrowerHistory.totalAccruedInterest;
+            pslfBorrower.paymentDuration = pslfMonth;
+            pslfBorrower.forgiveness = pslfBorrowerHistory.remainingBalance;
+        });
+
+        // Apply remaining totals
+        const familyFederalTaxes = Object.entries(borrowers).reduce(
+            (total, borrower) => total + totals[borrower[1]].federalTaxes, 0).roundDecimals(2);
+        totals.familyTotalPayments = (Object.entries(borrowers).reduce(
+            (total, borrower) => total + totals[borrower[1]].totalPayment, 0) + familyFederalTaxes).roundDecimals(2);
+        totals.familyTotalAccruedInterest = Object.entries(borrowers).reduce(
+            (total, borrower) => total + totals[borrower[1]].totalAccruedInterest, 0).roundDecimals(2);
+        totals.familyRemainingBalance = Object.entries(borrowers).reduce(
+            (total, borrower) => total + totals[borrower[1]].remainingBalance, 0).roundDecimals(2);
+        totals.familyPaymentDuration = Object.entries(borrowers).reduce(
+            (max, borrower) => { 
+                const paymentDuration = totals[borrower[1]].paymentDuration;
+                max = (max < paymentDuration) ? paymentDuration : max;
+                return max;
+            }, 0).roundDecimals(2);
+        totals.familyFederalTaxes = familyFederalTaxes;
+        totals.familyForgiveness = Object.entries(borrowers).reduce(
+            (total, borrower) => total + totals[borrower[1]].forgiveness, 0).roundDecimals(2);
+        totals.familyIRSSixYearLoanInterestAccrual = Object.entries(borrowers).reduce(
+            (total, borrower) => total + totals[borrower[1]].irsSixYearLoanInterestAccrual, 0).roundDecimals(2);
+        
+        // Update optimalHeuristic if applicable
+        if (optimalHeuristic === null) {
+            optimalHeuristic = orderID;
         } else {
-            federalTaxes += remainingIncome * bracketRate;
-            remainingIncome = 0;
+            const newOptimal =  repaymentSimulations[optimalHeuristic].totals.familyTotalPayments > 
+                                repaymentSimulations[orderID].totals.familyTotalPayments;
+            if (newOptimal) optimalHeuristic = orderID;
+        }
+    });
+
+    const output = {};
+    output.strategyComparison = {};
+    Object.entries(repaymentSimulations).forEach(strategy => {
+        const strategyID = strategy[0];
+        const strategyData = structuredClone(strategy[1]);
+        output.strategyComparison[strategyID] = strategyData.totals;
+        output.strategyComparison[strategyID].repaymentOrder = strategyData.repaymentOrder;
+    })
+    output.optimalSimulation = repaymentSimulations[optimalHeuristic];
+    return output;
+
+
+    /* -------------------------------------------------
+        SIMULATE REPAYMENT FUNCTIONS
+    ------------------------------------------------- */
+    function getRemainingPayments(basicInfo, borrower) {
+        const planMap = ["old", 300, "new", 240, "rap", 360];
+        const planIndex = planMap.indexOf(basicInfo[borrower].repaymentPlan) + 1;
+        return planMap[planIndex] - basicInfo[borrower].qualifiedPayments;
+    }
+    function getHighestRemainingPayments(basicInfo) {
+        const selfRemainingPayments = getRemainingPayments(basicInfo, 'self');
+        if (basicInfo.married) {
+            const spouseRemainingPayments = getRemainingPayments(basicInfo, 'spouse');
+            return (selfRemainingPayments > spouseRemainingPayments) ? selfRemainingPayments : spouseRemainingPayments;
+        } 
+        return selfRemainingPayments;
+    }
+
+    function getMonthlyOverpaymentProportion(basicInfo) {
+        const monthlyOverpayment = basicInfo.monthlyOverpayment;
+        let familyIncome = basicInfo.self.agi;
+        if (basicInfo.married) {
+            familyIncome += basicInfo.spouse.agi;
+        }
+        return (familyIncome === 0) ? 0 : monthlyOverpayment / familyIncome;
+    }
+
+    function applyInterestAccrual(loans) {
+        let accruedInterest = 0;
+        for (const loanID in loans) {
+            const loan = loans[loanID];
+            const principal = loan.principal;
+            const rate = loan.interestRate / 100;
+            const newAccrual = principal * rate / 12;
+            accruedInterest = (accruedInterest + newAccrual).roundDecimals(2);
+
+            let currentAccrual = loan.interestAccrual;
+            loan.interestAccrual = (currentAccrual + newAccrual).roundDecimals(2);
+        }
+        return accruedInterest;
+    }
+
+    function applyMinimumPayment(loans) {
+        const loansLength = Object.keys(loans).length;
+        let totalMinPayment = 0;
+
+        let increment = 1;
+        let loanID = increment;
+        while (Object.keys(loans).length > 0 && increment <= loansLength) {
+            let loan = loans[increment];
+            if (loan === undefined) {
+                increment++;
+                continue;
+            }
+
+            let remainingPayment = loan.minPayment;      
+            totalMinPayment += remainingPayment;
+            while (remainingPayment >= 0.01) {
+                remainingPayment = makePayment(remainingPayment, loan);
+                if (remainingPayment >= 0.01) {
+                    delete loans[loanID];
+
+                    // If minPayment exceeds loan balance, servicers prioritize unsubsidized and highest interest loans
+                    // for remainder of payment. Tie breakers if same loan type and rate is at servicer discretion.
+                    // As user input does not allow loan type, highest interest with highest balance is prioritized.
+                    loanID = findNextLoan(loans);
+                    if (loanID === null) break;
+                    loan = loans[loanID];
+                }
+            }
+
+            if (remainingPayment) totalMinPayment -= remainingPayment;
+            increment++;
+            loanID = increment;
+        }
+        return totalMinPayment.roundDecimals(2);
+
+        function findNextLoan(loans) {
+            if (Object.keys(loans).length === 0) return null;
+
+            let nextLoan = null;
+            for (const loan in loans) {
+                if (nextLoan === null) {
+                    nextLoan = loan;
+                    continue;
+                }
+
+                if (loans[loan].interestRate > loans[nextLoan].interestRate) {
+                    nextLoan = loan;
+                    continue;
+                }
+
+                const loanBalance = loans[loan].principal + loans[loan].interestAccrual;
+                const nextLoanBalance = loans[nextLoan].principal + loans[nextLoan].interestAccrual;
+                const equalInterest = loans[loan].interestRate === loans[nextLoan].interestRate;
+                if (equalInterest && loanBalance > nextLoanBalance) {
+                    nextLoan = loan;
+                }
+            }
+            return nextLoan;
         }
     }
-    federalTaxes = federalTaxes.toFixed(2);
 
-    const medicareAndSS = (AGI * medicareRate + AGI * ssRate).toFixed(2);
-    const totalTaxes = (parseFloat(medicareAndSS) + parseFloat(federalTaxes)).toFixed(2);
-    const takeHome = AGI - parseFloat(totalTaxes);
-    return [takeHome, totalTaxes];
+    function makePayment(payment, loan) {
+        let remainingPayment = payment;
+        let accruedInterest = loan.interestAccrual;
+
+        if (accruedInterest > remainingPayment) {
+            loan.interestAccrual = (loan.interestAccrual - remainingPayment).roundDecimals(2);
+            remainingPayment = 0;
+        } else {
+            remainingPayment = remainingPayment - loan.interestAccrual;
+            loan.interestAccrual = 0;
+
+            let principal = loan.principal;
+            if (principal > remainingPayment) {
+                loan.principal = (loan.principal - remainingPayment).roundDecimals(2);
+                remainingPayment = 0;
+            } else {
+                remainingPayment = remainingPayment - loan.principal;
+                loan.principal = 0;
+            }
+        }
+
+        return remainingPayment;
+    }
+
+}
+function taxBomb(basicInfo, totals, borrowers, borrower, year, sameYearForgiveness, previousBorrowerBalance) {
+    const married = basicInfo.married;
+    const filingJointly = basicInfo.filingJointly;
+    const filingType = (filingJointly) ? 'married' : 'single';
+    const filingBorrowers = basicInfo.filingJointly ? borrowers : [borrower];
+    const agi = filingBorrowers.reduce((total, borrower) => {
+        total += basicInfo[borrower].agi; //agi already scaled with annualGrowth during monthly payment simulation
+        return total.roundDecimals(2);
+    }, 0);
+    const dependents = basicInfo.dependents;
+
+    const balance = totals[borrower].remainingBalance;
+    const deductionType = (filingJointly) ? 
+        STANDARD_DEDUCTIONS.MARRIED : (married && !filingJointly) ?
+            STANDARD_DEDUCTIONS.SINGLE: (dependents > 0) ?  // MFS is technically not single but used for simplicity
+                STANDARD_DEDUCTIONS.HOH : STANDARD_DEDUCTIONS.SINGLE;
+    const growthFactor = Math.pow(CPI_U_MULTIPLIER, year);
+    const deduction = deductionType * growthFactor;
+
+    let start = Math.max(0, agi - deduction);
+    if (sameYearForgiveness) start += previousBorrowerBalance;
+    const end = start + balance;
+
+    let total = 0;
+    for (const bracket of INCOME_BRACKETS[filingType]) {
+        const min = bracket.min * growthFactor;
+        const max = bracket.max * growthFactor;
+        const rate = bracket.rate; 
+
+        if (start >= max || end <= min) continue;
+
+        const overlapMin = Math.max(start, min);
+        const overlapMax = Math.min(end, max);
+        if (overlapMax > overlapMin) {
+            total += (overlapMax - overlapMin) * rate;
+        }
+    }
+    return total.roundDecimals(2);
 }

@@ -28,24 +28,27 @@ function getNumberInputFromTemplate(template, borrower) {
                     </div>`;
 }
 
-const monthlyPaymentTemplate = {
+const monthlyOverpaymentTemplate = {
     input: 'number',
-    label: 'Monthly Payment',
-    ariaLabel: 'monthly payment amount (in dollars)',
-    id: 'monthlyPayment',
+    label: 'Monthly Overpayment',
+    ariaLabel: 'monthly overpayment amount (in dollars)',
+    id: 'monthlyOverpayment',
     data: {
         'data-storage': "localStorage"
     },
-    spinnerLabel: 'the monthly payment amount',
+    spinnerLabel: 'the monthly overpayment amount',
     type: 'dollar',
     class: null,
-    value: null,
+    value: '0.00',
     placeholder: null,
     step: '0.01',
     min: '0.00',
     max: '9999999999999.99',
-    tooltip: false,
-    help: false,
+    tooltip: {
+        ariaLabel: 'Help about monthly overpayment',
+        text: 'An excess payment in addition to the monthly minimum as determined by your selected plan. The default is set for minimum monthly payments.'
+    },
+    help: true,
     prepend: false,
 }
 
@@ -60,7 +63,7 @@ const agiTemplate = {
     spinnerLabel: 'annual adjusted gross income amount',
     type: 'dollar',
     class: null,
-    value: null,
+    value: `0.00`,
     placeholder: null,
     step: '0.01',
     min: '0.00',
@@ -92,7 +95,7 @@ const annualGrowthTemplate = {
     max: '99.99',
     tooltip: {
         ariaLabel: 'Help about annual growth features',
-        text: 'Disabled if payment scaling is set to a fixed monthly payment.&#10;&#10;For a conservative estimate, the median U.S. annual income growth has been 3.8% over the last 30 years.'
+        text: 'For a conservative estimate, the median U.S. annual income growth has been 3.8% over the last 30 years.'
     },
     help: true,
     prepend: true
@@ -117,7 +120,7 @@ const qualifiedPaymentsTemplate = {
     max: '360',
     tooltip: {
         ariaLabel: 'Help about determining current number of qualified payments',
-        text: 'Number of qualifying monthly payments made towards your public student loans.&#10;&#10;For an exact number, log into StudentAid.gov, search for \'NSLDS Payment Counter Summary\' and paste the link found. Input the difference of the plan maximum and the repayment counter into this field.'
+        text: 'Number of qualifying monthly overpayments made towards your public student loans.&#10;&#10;For an exact number, log into StudentAid.gov, search for \'NSLDS Payment Counter Summary\' and paste the link found. Input the difference of the plan maximum and the repayment counter into this field.'
     },
     help: true,
     prepend: true
@@ -219,20 +222,20 @@ function getOptionsFromTemplate(template, id) {
     return output;
 }
 
-const fixedMonthlyTemplate = {
+const fixedOverpaymentTemplate = {
     input: 'select',
-    label: 'Payment Scaling',
-    id: 'fixedMonthly',
+    label: 'Overpayment Scaling',
+    id: 'fixedOverpayments',
     data: {
         'data-storage': "localStorage"
     },
     tooltip: {
-        ariaLabel: 'Help about payment scaling',
-        text: 'For estimating new minimum payments at annual recertification if income is expected to grow over time. Monthly payment will scale proportionally to annual income growth values.&#10;&#10;Scales to combined income growth of both self and spouse if filing jointly.'
+        ariaLabel: 'Help about overpayment scaling',
+        text: 'For scaling the overpayment amount if income is expected to grow over time. Monthly overpayments will be a minimum of the set monthly overpayment value and scale proportionally to the estimated total income of the household.'
     },
     options: {
-        'no': 'Scale with Income Growth',
-        'yes': 'Fixed Monthly Payment'
+        'yes': 'Fixed Overpayments',
+        'no': 'Scale with Income Growth'
     },
     help: true,
     prepend: false,
@@ -605,8 +608,8 @@ const selfTemplate = {
         id: null,
         class: 'row-2',
         fields: {
-            monthlyPaymentTemplate,
-            fixedMonthlyTemplate
+            monthlyOverpaymentTemplate,
+            fixedOverpaymentTemplate
         }
     },
     2: {

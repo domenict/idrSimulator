@@ -75,8 +75,7 @@ function delayTransition(fromLoad) {
 // Element attributes must be set to correct state after restoring/deleting session
 function updateToggleEvents() {
     toggleMarriedListenerHandler();
-    toggleIncomeGrowth(document.getElementById("fixedMonthly"));
-    updateFamilySizeMin(); //also called by toggleMarriedListenerHandler() but I'm paranoid;
+    updateFamilySizeMin(); //also called by toggleMarriedListenerHandler but I'm paranoid;
 
     const repaymentPlans = Array.from(document.querySelectorAll('[data-field="repaymentPlan"]'));
     repaymentPlans.forEach(element => repaymentPlanToggle(element));
@@ -123,10 +122,6 @@ function addFormListeners() {
     // Plan type changes qualifiedPayments min/max and placeholder
     const repaymentPlans = Array.from(document.querySelectorAll('[data-field="repaymentPlan"]'));
     repaymentPlans.forEach(element => { element.addEventListener('change', repaymentPlanListenerHandler)});
-    
-    // Fixed monthly enables/disabled income growth fields
-    const fixedMonthly = document.getElementById('fixedMonthly');
-    fixedMonthly.addEventListener('change', toggleIncomeGrowthListenerHandler);
 
     // Adding/removing dependents updates family size minimum
     document.getElementById('dependents').addEventListener('change', updateFamilySizeMinHandler);
@@ -605,7 +600,7 @@ async function saveToStorage(passphrase) {
     }
     toLocalStorageObject["selfLoanCount"] = selfLoanCount;
     toLocalStorageObject["spouseLoanCount"] = spouseLoanCount;
-    toLocalStorageObject["cache"] = JSON.parse(JSON.stringify(cache));
+    toLocalStorageObject["cache"] = structuredClone(cache);
 
     const encryptedsavedSession = await runWorkerTask('encrypt', [passphrase, toLocalStorageObject]);
     const error = encryptedsavedSession["error"];
@@ -964,51 +959,6 @@ function repaymentPlanToggle(element) {
     const message = (qualifiedPaymentValue > maxPayments)
                     ? `Your${(borrower === 'spouse') ? ' spouse\'s' : ''} plan changed to ${planShort}. Maximum qualifying payments reduced to ${maxPayments}. Value clamped from ${qualifiedPaymentValue}.`
                     : `Your${(borrower === 'spouse') ? ' spouse\'s' : ''} plan changed to ${planShort}. Forgiveness now after ${maxPayments} qualifying payments.`
-    announce(message);
-}
-
-// Fixed monthly toggles incomeGrowth, storing/recalling from cache 
-function toggleIncomeGrowthListenerHandler(e) {
-    toggleIncomeGrowth(e.target);
-}
-function toggleIncomeGrowth(element) {
-    const fixedMonthly = (element.value === "yes") ? true : false;
-    const incomeGrowth = Array.from(document.querySelectorAll('[data-field="incomeGrowth"]'));
-
-    incomeGrowth.forEach(element => {
-        const key = element.id + ".bak";
-        let value = element.value;
-        if (fixedMonthly && cache[key] === undefined) {
-            cache[key] = value;
-            value = "0.00";
-        }
-        if (!fixedMonthly) {
-            if (cache[key] !== undefined) {
-                value = cache[key];
-                delete cache[key];
-            } else if (value === "") {
-                value = null;
-            } 
-        }
-        value = (value !== null) ? value : "";
-
-        element.value = value;
-        element.readOnly = (fixedMonthly) ? true : false;
-        element.tabIndex = (fixedMonthly) ? -1 : 0;
-        element.setAttribute("aria-disabled", (fixedMonthly) ? 'true' : 'false');
-
-        const wrapper = element.closest('.input-wrapper.percent');
-        if (fixedMonthly) {
-            wrapper.classList.add("incomeGrowthDisabled");
-        } else { 
-            wrapper.classList.remove("incomeGrowthDisabled");
-        }
-    });
-
-    const isMarried = document.querySelector('input[name="married"]:checked')?.value === 'yes';
-    const message = (fixedMonthly)
-                    ? `Fixed monthly payment selected. Annual income growth field${isMarried ? 's' : ''} disabled and set to zero.`
-                    : `Scale with income growth selected. Annual income growth field${isMarried ? 's' : ''} re-enabled.`;
     announce(message);
 }
 

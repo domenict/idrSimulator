@@ -46,7 +46,7 @@ const monthlyOverpaymentTemplate = {
     max: '9999999999999.99',
     tooltip: {
         ariaLabel: 'Help about monthly overpayment',
-        text: 'An excess payment in addition to the monthly minimum as determined by your selected plan. The default is set for minimum monthly payments.'
+        text: 'An excess payment in addition to the monthly minimum determined by your selected plan(s) and applied to all borrowers. The default is set for minimum monthly payments.'
     },
     help: true,
     prepend: false,
@@ -120,12 +120,35 @@ const qualifiedPaymentsTemplate = {
     max: '360',
     tooltip: {
         ariaLabel: 'Help about determining current number of qualified payments',
-        text: 'Number of qualifying monthly overpayments made towards your public student loans.&#10;&#10;For an exact number, log into StudentAid.gov, search for \'NSLDS Payment Counter Summary\' and paste the link found. Input the difference of the plan maximum and the repayment counter into this field.'
+        text: 'Number of qualifying monthly payments made towards your public student loans.&#10;&#10;For an exact number, log into StudentAid.gov, search for \'NSLDS Payment Counter Summary\' and paste the link found. Input the difference of the plan maximum and the repayment counter into this field.'
     },
     help: true,
     prepend: true
 }
 
+const standardCapTemplate = {
+    input: 'number',
+    label: 'Permanent Standard',
+    ariaLabel: 'permanent standard amount (in dollars)',
+    id: 'standardCap',
+    data: {
+        'data-storage': "localStorage"
+    },
+    spinnerLabel: 'the permanent standard amount',
+    type: 'dollar',
+    class: null,
+    value: '0.00',
+    placeholder: null,
+    step: '0.01',
+    min: '0.00',
+    max: '9999999999999.99',
+    tooltip: {
+        ariaLabel: 'Help about understanding permanent standard',
+        text: 'The 10-year standard payment amount that is calculated when enrolled in IBR. Minimum payments cannot exceed this amount while on the plan. If new to IDR, keep this value at the default to calculate it for you.'
+    },
+    help: true,
+    prepend: true,
+}
 const familySizeTemplate = {
     input: 'number',
     label: 'Family Size',
@@ -231,7 +254,7 @@ const fixedOverpaymentTemplate = {
     },
     tooltip: {
         ariaLabel: 'Help about overpayment scaling',
-        text: 'For scaling the overpayment amount if income is expected to grow over time. Monthly overpayments will be a minimum of the set monthly overpayment value and scale proportionally to the estimated total income of the household.'
+        text: 'For scaling the overpayment amount if income is expected to grow over time.&#10;&#10;The minimum overpayment will equal the \'Monthly Overpayment\' field and will scale proportionally to the estimated total income of the household.'
     },
     options: {
         'yes': 'Fixed Overpayments',
@@ -270,13 +293,31 @@ const interestReductionTemplate = {
     },
     tooltip: {
         ariaLabel: 'Help about interest reduction features',
-        text: 'A federally mandated 0.25% reduction for public loans rates if enrolled in auto-pay.&#10;&#10;Applied at time of calculation.'
+        text: 'A federally mandated 0.25% reduction for public loans rates if enrolled in auto-pay that will be applied during analysis.'
     },
     options: {
         'no': 'Not applicable',
         'yes': 'Enrolled in autopay'
     },
     help: true,
+    prepend: true,
+    spouseDiv: false
+}
+
+const pslfTemplate = {
+    input: 'select',
+    label: 'PSLF Eligibility',
+    id: 'pslfEligible',
+    data: {
+        'data-storage': "localStorage",
+        'data-field': "pslfEligibility"
+    },
+    tooltip: false,
+    options: {
+        'no': 'Not Eligible',
+        'yes': 'PSLF Eligible'
+    },
+    help: false,
     prepend: true,
     spouseDiv: false
 }
@@ -628,6 +669,16 @@ const selfTemplate = {
         fields: {
             repaymentPlanTemplate,
             qualifiedPaymentsTemplate,
+            standardCapTemplate
+            
+        }
+    },
+    4: {
+        comment: `<!-- ==================== SELF OPTIONS ==================== -->`,
+        id: null,
+        class: 'row-2',
+        fields: {
+            pslfTemplate,
             interestReductionTemplate
         }
     }
@@ -682,6 +733,15 @@ const spouseTemplate = {
         fields: {
             repaymentPlanTemplate,
             qualifiedPaymentsTemplate,
+            standardCapTemplate
+        }
+    },
+    3: {
+        comment: `<!-- ==================== SPOUSE OPTIONS ==================== -->`,
+        id: null,
+        class: 'row-2',
+        fields: {
+            pslfTemplate,
             interestReductionTemplate
         }
     }

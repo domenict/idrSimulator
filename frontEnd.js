@@ -1,7 +1,7 @@
 /* -------------------------------------------------
     GLOBAL VARIABLES
 ------------------------------------------------- */
-let incTimer, scrollTimer, cryptoWorker, workerUrl;
+let incTimer, scrollTimer, announcementTimeout, cryptoWorker, workerUrl;
 const cache = {};
 const announcer = document.getElementById('live-announcements');
 
@@ -74,9 +74,9 @@ function delayTransition(fromLoad) {
 
 // Element attributes must be set to correct state after restoring/deleting session
 function updateToggleEvents() {
-    toggleMarriedListenerHandler();
-    updateFamilySizeMin(); //also called by toggleMarriedListenerHandler but I'm paranoid;
-
+    const isMarried = document.querySelector('input[name="married"]:checked')?.value === 'yes';
+    toggleMarried(isMarried);
+    updateFamilySizeMin();
     const repaymentPlans = Array.from(document.querySelectorAll('[data-field="repaymentPlan"]'));
     repaymentPlans.forEach(element => repaymentPlanToggle(element));
 }
@@ -122,6 +122,8 @@ function addFormListeners() {
     // Plan type changes qualifiedPayments min/max and placeholder
     const repaymentPlans = Array.from(document.querySelectorAll('[data-field="repaymentPlan"]'));
     repaymentPlans.forEach(element => { element.addEventListener('change', repaymentPlanListenerHandler)});
+    const pslfEligibility = Array.from(document.querySelectorAll('[data-field="pslfEligibility"]'));
+    pslfEligibility.forEach(element => { element.addEventListener('change', repaymentPlanListenerHandler)});
 
     // Adding/removing dependents updates family size minimum
     document.getElementById('dependents').addEventListener('change', updateFamilySizeMinHandler);
@@ -922,59 +924,87 @@ function repaymentPlanListenerHandler(e) {
     repaymentPlanToggle(e.target);
 }
 function repaymentPlanToggle(element) {
-    const repaymentPlanValue = element.value;
-    const repaymentPlanId = element.id;
-    const borrower = repaymentPlanId.split("_")[0];
+    const id = element.id
+    const borrower = id.split("_")[0];
+    const repaymentPlanElement = document.getElementById(borrower + '_repaymentPlan');
+    const qualifiedPaymentsElement = document.getElementById(borrower + '_qualifiedPayments');
+    const pslfEligibleElement = document.getElementById(borrower + "_pslfEligible");
+
+    const repaymentPlan = repaymentPlanElement.value;
+    const qualifiedPayments = qualifiedPaymentsElement.value;
+    const pslfEligible = pslfEligibleElement.value === 'yes'
 
     // Sets qualifiedPayment max/placeholders based on repaymentPlan selection
-    const qualifiedPaymentId = borrower + "_qualifiedPayments";
-    const qualifiedPaymentElement = document.getElementById(qualifiedPaymentId);
-    const qualifiedPaymentMaximums = ["old", 300, "new", 240, "rap", 360];
-    const index = qualifiedPaymentMaximums.indexOf(repaymentPlanValue) + 1;
-    const maxPayments = qualifiedPaymentMaximums[index];
-    qualifiedPaymentElement.placeholder = "Forgiveness at " + maxPayments;
-    qualifiedPaymentElement.max = maxPayments;
-
-    const qualifiedPaymentValue = Number(qualifiedPaymentElement.value);
-    const key = qualifiedPaymentId + ".bak";
-    const cachedQualifyingPayments = cache[key];
-    if (cachedQualifyingPayments !== undefined) {
-        if (cachedQualifyingPayments <= maxPayments) {
-            qualifiedPaymentElement.value = cache[key];
+    const planMap = ["old", 300, "new", 240, "rap", 360];
+    const index = planMap.indexOf(repaymentPlan) + 1;
+    const planMax = planMap[index];
+    const maxPayments = (pslfEligible) ? 120 : planMax;
+    qualifiedPaymentsElement.placeholder = "Forgiveness at " + maxPayments;
+    qualifiedPaymentsElement.max = maxPayments;
+    
+    const key = qualifiedPaymentsElement.id + ".bak";
+    if (cache[key] !== undefined) {
+        if (cache[key] < maxPayments) {
+            qualifiedPaymentsElement.value = cache[key];
             delete cache[key];
         } else {
-            qualifiedPaymentElement.value = maxPayments.toString();
+            qualifiedPaymentsElement.value = maxPayments.toString();
         }
-    } else if (qualifiedPaymentValue > maxPayments) {
-        cache[key] = qualifiedPaymentElement.value;
-        qualifiedPaymentElement.value = maxPayments.toString();
+    } else if (qualifiedPayments > maxPayments) {
+        cache[key] = qualifiedPaymentsElement.value;
+        qualifiedPaymentsElement.value = maxPayments.toString();
     }
 
-    //const planShort = element.options[element.selectedIndex].text;
-    const customTrigger = document.querySelector(`[data-id="${element.id}"] .select-value`);
-    const planShort = customTrigger ? customTrigger.textContent.trim() : 'Unknown Plan';
-
+    const selectList = document.querySelector(`[data-id="${repaymentPlanElement.id}"]`).querySelector('.select-dropdown');
+    const planShort = selectList.querySelector(`li[data-value="${repaymentPlan}"]`).textContent;
     
-    qualifiedPaymentElement.setAttribute('aria-label', `Your${(borrower === 'spouse') ? ' spouse\'s ' : ' '}number of payments made (maximum ${maxPayments} on ${planShort} plan)`);
-    const message = (qualifiedPaymentValue > maxPayments)
-                    ? `Your${(borrower === 'spouse') ? ' spouse\'s' : ''} plan changed to ${planShort}. Maximum qualifying payments reduced to ${maxPayments}. Value clamped from ${qualifiedPaymentValue}.`
-                    : `Your${(borrower === 'spouse') ? ' spouse\'s' : ''} plan changed to ${planShort}. Forgiveness now after ${maxPayments} qualifying payments.`
-    announce(message);
+    let message;
+    if (id === borrower + '_pslfEligible') {
+        message = (pslfEligible) ? 
+            `You have selected PSLF eligible for your${(borrower === 'self' ? 'self. ' : ' spouse. ')}` :
+            `You have removed PSLF eligiblity from your${(borrower === 'self' ? 'self. ' : ' spouse. ')}`;
+        message += (qualifiedPayments > maxPayments) ?
+            `Maximum qualifying payments reduced to ${maxPayments}. Value clamped from ${qualifiedPayments}. ` :
+            `Forgiveness now after ${maxPayments} qualifying payments. `;
+    } else {
+        message = `Your${(borrower === 'spouse') ? ' spouse\'s' : ''} plan changed to ${planShort}. `;
+        if (qualifiedPayments > maxPayments) {
+            message += `Maximum qualifying payments reduced to ${maxPayments}. Value clamped from ${qualifiedPayments}. `;
+        } else {
+            if (pslfEligible) {
+                message += `Maximum qualifying payments remains at ${maxPayments} due to PSLF eligibility. `
+            } else {
+                message += `Forgiveness now after ${maxPayments} qualifying payments. `;
+            }
+        }
+    }
+    announce(message); 
 }
 
-function updateFamilySizeMinHandler() { updateFamilySizeMin() };
+function updateFamilySizeMinHandler(e) { updateFamilySize() };
+function updateFamilySize() {
+    const familySize = document.getElementById('familySize');
+    const diff = familySize.value - familySize.min;
+    const newMin = updateFamilySizeMin();
+    const newValue = newMin + diff;
+    familySize.value = Math.min(familySize.max, Math.max(familySize.min, newValue));
+}
 function updateFamilySizeMin() {
     const isMarried = document.querySelector('input[name="married"]:checked')?.value === 'yes';
     const familySize = document.getElementById('familySize');
     const dependents = document.getElementById('dependents');
     const dependentsValue = parseInt(dependents.value) || 0;
-    familySize.min = ((isMarried) ? 2 : 1) + dependentsValue;
+
+    const newMin = ((isMarried) ? 2 : 1) + dependentsValue;
+    familySize.min = newMin;
+    return newMin;
 }
 
 // Toggles spouse field style/classes based on married radio and toggle type
 function toggleMarriedListenerHandler() {
     const isMarried = document.querySelector('input[name="married"]:checked')?.value === 'yes';
     toggleMarried(isMarried);
+    updateFamilySize();
 }
 function toggleMarried(isMarried) {
     const priorityField = document.querySelector('[aria-labelledby="priority-legend"]').closest('.radio-field');
@@ -1021,7 +1051,6 @@ function toggleMarried(isMarried) {
         });
         announce('Spouse fields have been removed.');
     }
-    updateFamilySizeMin();
 }
 
 
@@ -1069,6 +1098,7 @@ function handleIncUp(e) {
     const input = e.target.closest('.input-wrapper').querySelector('input');
     const step = parseFloat(input.step);
     startIncrement( step, input);
+    input.dispatchEvent(new Event('change', { bubbles: true }));
 }
 
 function handleIncDown(e) {
@@ -1076,6 +1106,7 @@ function handleIncDown(e) {
     const input = e.target.closest('.input-wrapper').querySelector('input');
     const step = parseFloat(input.step);
     startIncrement( -(step), input);
+    input.dispatchEvent(new Event('change', { bubbles: true }));
 }
 
 function createSpinnerListeners(wrapper) {
@@ -1225,8 +1256,13 @@ function formObjectValidation(formObject) {
 
 // For announcements
 function announce(message) {
-    announcer.textContent = '';
-    requestAnimationFrame(() => announcer.textContent = message);
+    clearTimeout(announcementTimeout);
+    announcementTimeout = setTimeout(() => {
+        announcer.textContent = '';
+        requestAnimationFrame(() => {
+            announcer.textContent = message;
+        });
+    }, 50);
 }
 
 

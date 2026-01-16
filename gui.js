@@ -1,9 +1,31 @@
 /* -------------------------------------------------
-    GLOBAL VARIABLES
+    GLOBAL VARIABLES / PROTOTYPES
 ------------------------------------------------- */
 let incTimer, scrollTimer, announcementTimeout, cryptoWorker, workerUrl;
 const cache = {};
 const announcer = document.getElementById('live-announcements');
+
+Object.defineProperty(String.prototype, 'strToNum', {
+    value: function() {
+        const clean = this.replace(/[^\d.-]/g, '');
+        return clean === '' ? NaN : parseFloat(clean);
+    },
+    enumerable: false
+});
+
+Object.defineProperty(Number.prototype, 'numToStr', {
+    value: function(ref = "") {
+        if (isNaN(this)) return "";
+        const hasDecimal = ref.includes('.');
+        const decimalsPlaces = hasDecimal ? 2 : 0; 
+        return new Intl.NumberFormat('en-US', {
+            minimumFractionDigits: decimalsPlaces,
+            maximumFractionDigits: decimalsPlaces,
+            roundingMode: 'floor'
+        }).format(this);
+    },
+    enumerable: false
+});
 
 
 /* *************************************************************************************************
@@ -105,12 +127,12 @@ function addFormListeners() {
     });
 
     // Number input handling
-    const clampNumberInputs = document.querySelectorAll('input[type="number"]');
+    const clampNumberInputs = document.querySelectorAll('[data-type="number"]');
     clampNumberInputs.forEach(element => { 
-        element.addEventListener("change", handleInputChange);
-        element.addEventListener("focus", handleInputFocus);
-        element.addEventListener("blur", handleInputBlur);
-        element.addEventListener("beforeinput", handleInputBeforeInput);
+        element.addEventListener("change", handleNumberInputChange);
+        element.addEventListener("focus", handleNumberInputFocus);
+        element.addEventListener("blur", handleNumberInputBlur);
+        element.addEventListener("beforeinput", handleNumberInputBeforeInput);
     });
 
     // Steps integer number inputs for custom spinners, supports holding and acceleration
@@ -237,7 +259,7 @@ function addModalListeners() {
     input.addEventListener('click', updateCapsLockWarning);
     input.addEventListener('keydown', handleModalInputKeydown);
     input.addEventListener('keyup', updateCapsLockWarning);
-    input.addEventListener('focus', handleInputFocus);
+    input.addEventListener('focus', handleNumberInputFocus);
     input.addEventListener('blur', handleModalInputBlur);
 
     const showHideButton = document.getElementById("modal-show-hide-toggle");
@@ -542,7 +564,7 @@ async function loadFromStorage(passphrase, savedSession) {
     delete fromLocalStorageObject["spouseLoanCount"];
     
     // ---- finally, fill every stored field -------------------------------
-    const VALID = /^(?:\d+(?:\.\d{1,2})?|(yes|no)|(old|new|rap)|(none|self|spouse)|(us|ak|hi))$/i;
+    const VALID = /^(?:\d{1,3}(?:,\d{3})*|\d+)(?:\.\d{1,2})?|(?:yes|no)|(?:old|new|rap)|(?:none|self|spouse)|(?:us|ak|hi)$/i
     const keysFromLocalStorage = Object.keys(fromLocalStorageObject);
     for (const key of keysFromLocalStorage) {
         const value = fromLocalStorageObject[key];
@@ -592,7 +614,7 @@ async function saveToStorage(passphrase) {
     const keysToLocalStorageObject = Object.keys(toLocalStorageObject);
 
     // Validate and remove empty/invalid inputs
-    const VALID = /^(?:\d+(?:\.\d{1,2})?|(yes|no)|(old|new|rap)|(none|self|spouse)|(us|ak|hi))$/i;
+    const VALID = /^(?:\d{1,3}(?:,\d{3})*|\d+)(?:\.\d{1,2})?|(?:yes|no)|(?:old|new|rap)|(?:none|self|spouse)|(?:us|ak|hi)$/i
     for (const key of keysToLocalStorageObject) {
         const value = toLocalStorageObject[key];
         if (value && !VALID.test(value)) {
@@ -863,60 +885,109 @@ async function clearSessions() {
     }
 }
 
-// Clamps input to HTML set min/max
-function handleInputChange(e) {
+// Number input handling in and out of focus/change
+function handleNumberInputChange(e) {
     const element = e.target;
-    const min = parseFloat(element.min);
-    const max = parseFloat(element.max);
-    const value = parseFloat(element.value);
-    if (!isNaN(min) && !isNaN(max) && !isNaN(value)) {
-        element.value = Math.max(min, Math.min(value, max));
-    } 
+    if (element.value === '') return;
+    element.value = clampValue(element);
+
     if (cache[element.name + ".bak"] !== undefined) {
         delete cache[element.name + ".bak"];
     }
 }
-
-// Highlights on focus for a better experience
-function handleInputFocus(e) {
-    e.target.select();
-}
-
-// Formats integers vs rates/dollars
-function handleInputBlur(e) {
+function handleNumberInputFocus(e) { e.target.select(); }
+function handleNumberInputBlur(e) {
     const element = e.target;
-    const value = element.value;
-    element.value = value; // Fixes decimal shenanigans
-    if (value) {
-        if (element.step === "1") {
-            element.value = parseInt(value);
-        } else {
-            element.value = parseFloat(value).toFixed(2);
-        }  
+    if (element.value === '') {
+        if (element.defaultValue) element.value = element.defaultValue;
+        return;
     }
+    element.value = clampValue(element); //Fixes decimal shenanigans
+}
+function clampValue(element) {
+    const value = element.value.strToNum();
+    const min = parseFloat(element.min);
+    const max = parseFloat(element.max)
+    const clampedValue = Math.max(min, Math.min(value, max));
+    return clampedValue.numToStr(element.step);
 }
 
-// Prevents invalid entry
-function handleInputBeforeInput (e) {
+// Prevents invalid entry and provides format correction
+function handleNumberInputBeforeInput (e) {
+    const element = e.target;
     const inserted = e.data || '';
-    const input = e.target;
-    const before = input.value.slice(0, input.selectionStart);
-    const after = input.value.slice(input.selectionEnd);
-    const newValue = before + inserted + after;
-    const num = parseFloat(newValue);
-
-    if (/[eE+\-]/.test(inserted)) {
+    let { value, selectionStart: start, selectionEnd: end } = element;
+    let before = value.slice(0, start);
+    let after = value.slice(end);
+    if (inserted && !/^[0-9., $%]*$/.test(inserted)) {
+        console.log(inserted)
         e.preventDefault();
         return;
     }
-    if (newValue !== '' && !/^\d*\.?\d{0,1}$/.test(newValue)) {
-        delayNumberFormatting(input);
-        return;
+    if (inserted && (inserted === '$' || inserted === '%' || inserted === ' ')) {
+        e.preventDefault();
+        return;   
     }
-    if (!isNaN(num) && num > input.max) {
-        delayNumberFormatting(input);
-        return;
+    if (inserted && inserted === '.') {
+        if (element.step === '1') {
+            e.preventDefault();
+            return;
+        }
+        if (value.length === 0 || (before === '' && after === '')) {
+            e.preventDefault();
+            element.value = '0.';
+            return;
+        }
     }
+
+    if (start === end) {
+        if (e.inputType === 'deleteContentBackward') before = before.slice(0, start - 1);
+        if (e.inputType === 'deleteContentForward')  after = after.slice(1, after.length);
+    }
+    const expectedValue = before + inserted + after;
+
+    let newValue = expectedValue;
+    let deltaModifier = 0;
+    if (e.inputType === 'deleteContentBackward') {
+        const charToDelete = value[start - 1];
+        if (charToDelete === ',') {
+            const removeOneMore = before.slice(0, start - 2) + inserted + after;
+            newValue = removeOneMore.strToNum().numToStr(removeOneMore);
+            deltaModifier -= 1;
+        }
+        if (charToDelete === '.') {
+            newValue = before;
+            deltaModifier += 2;
+        } 
+        if (newValue[0] === '.') deltaModifier -= 1;
+    }
+    if (e.inputType === 'deleteContentForward') {
+        const charToDelete = value[end];
+        if (charToDelete === ',') {
+            const removeOneMore = before + inserted + after.slice(1, after.length);
+            newValue = removeOneMore.strToNum().numToStr(removeOneMore);
+            deltaModifier += 1;
+        }
+        if (charToDelete === '.') {
+            newValue = before;
+            deltaModifier += 2;
+        } 
+        if (newValue[0] === '.') deltaModifier -= 1;
+    }
+    if (/^0[0-9,]/.test(newValue)) {
+        newValue = newValue.strToNum().numToStr(newValue);
+    }
+    if (!isNaN(newValue.strToNum()) && newValue.strToNum() > Number(element.max)) {
+        newValue = before + after;
+        if (element.step === '1') newValue = element.max;
+        newValue = newValue.strToNum().numToStr(newValue);
+    }
+    if (newValue !== '' && !/^\d{1,3}(,\d{3})*(\.\d{0,2})?$/.test(newValue)) {
+        newValue = newValue.strToNum().numToStr(newValue);
+    }
+    
+    // Intended to allow some sort of visual feedback to the user that an action is not allowed
+    delayNumberFormatting(element, expectedValue, newValue, deltaModifier);
 }
 
 // Modifies qualifiedPayment min/max based on plan
@@ -931,7 +1002,7 @@ function repaymentPlanToggle(element) {
     const pslfEligibleElement = document.getElementById(borrower + "_pslfEligible");
 
     const repaymentPlan = repaymentPlanElement.value;
-    const qualifiedPayments = qualifiedPaymentsElement.value;
+    const qualifiedPayments = qualifiedPaymentsElement.value.strToNum();
     const pslfEligible = pslfEligibleElement.value === 'yes'
 
     // Sets qualifiedPayment max/placeholders based on repaymentPlan selection
@@ -981,19 +1052,12 @@ function repaymentPlanToggle(element) {
     announce(message); 
 }
 
-function updateFamilySizeMinHandler(e) { updateFamilySize() };
-function updateFamilySize() {
-    const familySize = document.getElementById('familySize');
-    const diff = familySize.value - familySize.min;
-    const newMin = updateFamilySizeMin();
-    const newValue = newMin + diff;
-    familySize.value = Math.min(familySize.max, Math.max(familySize.min, newValue));
-}
+function updateFamilySizeMinHandler(e) { updateFamilySizeMin() };
 function updateFamilySizeMin() {
     const isMarried = document.querySelector('input[name="married"]:checked')?.value === 'yes';
     const familySize = document.getElementById('familySize');
     const dependents = document.getElementById('dependents');
-    const dependentsValue = parseInt(dependents.value) || 0;
+    const dependentsValue = dependents.value.strToNum();
 
     const newMin = ((isMarried) ? 2 : 1) + dependentsValue;
     familySize.min = newMin;
@@ -1004,7 +1068,7 @@ function updateFamilySizeMin() {
 function toggleMarriedListenerHandler() {
     const isMarried = document.querySelector('input[name="married"]:checked')?.value === 'yes';
     toggleMarried(isMarried);
-    updateFamilySize();
+    updateFamilySizeMin();
 }
 function toggleMarried(isMarried) {
     const priorityField = document.querySelector('[aria-labelledby="priority-legend"]').closest('.radio-field');
@@ -1078,15 +1142,16 @@ function startIncrement(inc, input) {
     function addStep(inc, input) {
         const min = parseFloat(input.min);
         const max = parseFloat(input.max);
-        const value = parseFloat(input.value);
-        const float = Math.abs(inc) !== 1;
+        const value = input.value.strToNum();
         if (input.value === "" || isNaN(value)) {
-            input.value = (float) ? Math.max(min, min + inc).toFixed(2) : Math.max(min, min + inc);
+            input.value = inc.numToStr(input.step);
             return;
         }
-        const newValue = value + inc;
+
+        let newValue = (value + inc).roundDecimals(2);
         if (newValue != value) {
-            input.value = (float) ? Math.max(min, Math.min(max, newValue)).toFixed(2) : Math.max(min, Math.min(max, newValue));
+            newValue = Math.max(min, Math.min(max, newValue));
+            input.value = newValue.numToStr(input.value);
         }
     }
 }
@@ -1139,19 +1204,19 @@ function removeSpinnerListeners(wrapper) {
 /* *************************************************************************************************
 ************************              LISTENER HELPER FUNCTIONS             ************************
 ************************************************************************************************* */
-
-// Creates timeout to allow keydown to trigger before modifying input - gives some sort of user feedback
-const delayNumberFormatting = debounce((target) => {
-    const value = target.value;
-    if (!/^\d*\.?\d{0,2}$/.test(value)) {
-        target.value = (parseInt(value * 100)/100).toFixed(2);
-    }
-    if (Number(value) > Number(target.max)) {
-        target.value = target.max;
-    } 
+// Creates timeout to allow keydown to trigger before modifying input to give user feedback
+const delayNumberFormatting = debounce((target, currentValue, newValue, deltaModifier) => {
+    const selectionStart = target.selectionStart;
+    if (currentValue === newValue) return;
+    target.value = newValue;
+    
+    const originalLength = currentValue.length;
+    const newLength = newValue.length;
+    const delta = newLength - originalLength + deltaModifier;
+    const newCursorPos = Math.max(0, selectionStart + delta);
+    target.focus();
+    target.setSelectionRange(newCursorPos, newCursorPos);
 }, 1);
-
-// Debounce for delayed input handling
 function debounce(func, delay) {
     let timeoutId;
     return (...args) => {
@@ -1195,24 +1260,25 @@ function formObjectValidation(formObject) {
     const keys = Object.keys(formObject);
     for (let i = 0; i < keys.length; i++) {
         const element = document.getElementById(keys[i]);
-        if (!element || element.type !== "number") continue;
+        if (!element || element.getAttribute('data-type') !== 'number') continue;
 
-        Number.prototype.countDecimals = function countDecimals () {
-            if(Math.floor(this.valueOf()) === this.valueOf()) return 0;
-            return this.toString().split(".")[1].length || 0; 
-        }
+        const input         = element.value
+        const inputDecimals = (input.includes('.')) ? input.split('.')[1].length : 0;
+        const inputNum      = input.strToNum();
+        const min           = element.min.strToNum();
+        const max           = element.max.strToNum();
+        const step          = element.step
+        const stepDecimals  = (step.includes('.')) ? step.split('.')[1].length : 0;
 
         let error = null;
-        if (element.value === "") {
+        if (input === "") {
             error = "Please fill out this field.";
-        } else if (parseFloat(element.value) < parseFloat(element.min)) {
-            error = `Value must be ${element.min} or greater.`;
-        } else if (parseFloat(element.value) > parseFloat(element.max)) {
-            error = `Value must be ${element.max} or fewer.`;
-        } else if (parseFloat(element.value).countDecimals() > parseFloat(element.step).countDecimals()) {
-            const decimalPlaces = parseFloat(element.step).countDecimals();
-            const isInteger = parseFloat(element.step).countDecimals() === 0;
-            error = `Value ${(isInteger) ? 'must be an integer.' : 'cannot exceed ' + decimalPlaces + ' decimal places.'}`;
+        } else if (inputNum < min) {
+            error = `Value must be ${min.numToStr(step)} or greater.`;
+        } else if (inputNum > max) {
+            error = `Value must be ${max.numToStr(step)} or fewer.`;
+        } else if (inputDecimals !== stepDecimals) {
+            error = `Value ${(!stepDecimals) ? 'must be an integer.' : 'cannot exceed ' + stepDecimals + ' decimal places.'}`;
         }
 
         if (error) {
@@ -1254,7 +1320,6 @@ function formObjectValidation(formObject) {
     return true;
 }
 
-// For announcements
 function announce(message) {
     clearTimeout(announcementTimeout);
     announcementTimeout = setTimeout(() => {
@@ -1553,10 +1618,10 @@ function focusTooltip(e) {
 function addNewLoanInputListeners(rowElement) {
     const inputs = rowElement.querySelectorAll('input');
     inputs.forEach(input => {
-        input.addEventListener("change", handleInputChange);
-        input.addEventListener("focus", handleInputFocus);
-        input.addEventListener("blur", handleInputBlur);
-        input.addEventListener("beforeinput", handleInputBeforeInput);
+        input.addEventListener("change", handleNumberInputChange);
+        input.addEventListener("focus", handleNumberInputFocus);
+        input.addEventListener("blur", handleNumberInputBlur);
+        input.addEventListener("beforeinput", handleNumberInputBeforeInput);
         createSpinnerListeners(input.closest('.input-wrapper'));
     });
 }
@@ -1565,10 +1630,10 @@ function addNewLoanInputListeners(rowElement) {
 function removeLoanInputListeners(rowElement) {
     const inputs = rowElement.querySelectorAll('input');
     inputs.forEach(input => {
-        input.removeEventListener('change', handleInputChange);
-        input.removeEventListener('focus', handleInputFocus);
-        input.removeEventListener('blur', handleInputBlur);
-        input.removeEventListener('beforeinput', handleInputBeforeInput);
+        input.removeEventListener('change', handleNumberInputChange);
+        input.removeEventListener('focus', handleNumberInputFocus);
+        input.removeEventListener('blur', handleNumberInputBlur);
+        input.removeEventListener('beforeinput', handleNumberInputBeforeInput);
         removeSpinnerListeners(input.closest('.input-wrapper'));
     });
 }

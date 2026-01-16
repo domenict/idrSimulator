@@ -17,7 +17,7 @@ function getNumberInputFromTemplate(template, borrower) {
                             <input id="${id}"
                                 name="${id}"
                                 aria-label="Your${(borrower === 'spouse') ? ' spouse\'s ' : ' '}${template.ariaLabel}"
-                                type="number"${(template.class) ? '\n                                class="' + template.class + '"' : ''}
+                                type="text"${(template.class) ? '\n                                class="' + template.class + '"' : ''}
                                 ${getDataAttributesFromTemplate(template.data)}${(borrower === 'spouse') ? ' data-tag="spouseField"' : ''}
                                 autocomplete="off"
                                 ${(template.placeholder) ? 'placeholder="' + template.placeholder + '" ' : ''}${(template.value) ? 'value="' + template.value + '" ' : ''}step="${template.step}" min="${template.min}" max="${template.max}" ${(borrower === 'spouse') ? 'disabled' : 'required'}>
@@ -34,7 +34,8 @@ const monthlyOverpaymentTemplate = {
     ariaLabel: 'monthly overpayment amount (in dollars)',
     id: 'monthlyOverpayment',
     data: {
-        'data-storage': "localStorage"
+        'data-storage': "localStorage",
+        'data-type': "number"
     },
     spinnerLabel: 'the monthly overpayment amount',
     type: 'dollar',
@@ -43,7 +44,7 @@ const monthlyOverpaymentTemplate = {
     placeholder: null,
     step: '0.01',
     min: '0.00',
-    max: '9999999999999.99',
+    max: '999999999.99',
     tooltip: {
         ariaLabel: 'Help about monthly overpayment',
         text: 'An excess payment in addition to the monthly minimum determined by your selected plan(s) and applied to all borrowers. The default is set for minimum monthly payments.'
@@ -58,7 +59,8 @@ const agiTemplate = {
     id: 'agi',
     ariaLabel: 'annual adjusted gross income (in dollars)',
     data: {
-        'data-storage': "localStorage"
+        'data-storage': "localStorage",
+        'data-type': "number"
     },
     spinnerLabel: 'annual adjusted gross income amount',
     type: 'dollar',
@@ -67,7 +69,7 @@ const agiTemplate = {
     placeholder: null,
     step: '0.01',
     min: '0.00',
-    max: '9999999999999.99',
+    max: '999999999.99',
     tooltip: {
         ariaLabel: 'Help about annual adjusted gross income entry',
         text: 'AGI (Adjusted Gross Income) is the total gross salary minus applicable deductions which may include 401(k) and HSA/FSA contributions, interest premiums or student loan interest payments (up to $2500). The exact amount can be found on line 11 of your most recent tax return (Form 1040).'
@@ -83,6 +85,7 @@ const annualGrowthTemplate = {
     id: 'annualGrowth',
     data: {
         'data-storage': "localStorage",
+        'data-type': "number",
         'data-field': "incomeGrowth"
     },
     spinnerLabel: 'annual income growth rate',
@@ -108,6 +111,7 @@ const qualifiedPaymentsTemplate = {
     ariaLabel: 'number of payments made (maximum 360 on RAP plan)',
     data: {
         'data-storage': "localStorage",
+        'data-type': "number",
         'data-field': "qualifiedPayments"
     },
     spinnerLabel: 'number of payments made', 
@@ -132,7 +136,8 @@ const standardCapTemplate = {
     ariaLabel: 'permanent standard amount (in dollars)',
     id: 'standardCap',
     data: {
-        'data-storage': "localStorage"
+        'data-storage': "localStorage",
+        'data-type': "number"
     },
     spinnerLabel: 'the permanent standard amount',
     type: 'dollar',
@@ -141,7 +146,7 @@ const standardCapTemplate = {
     placeholder: null,
     step: '0.01',
     min: '0.00',
-    max: '9999999999999.99',
+    max: '999999999.99',
     tooltip: {
         ariaLabel: 'Help about understanding permanent standard',
         text: 'The 10-year standard payment amount that is calculated when enrolled in IBR. Minimum payments cannot exceed this amount while on the plan. If new to IDR, keep this value at the default to calculate it for you.'
@@ -155,7 +160,8 @@ const familySizeTemplate = {
     ariaLabel: 'family size',
     id: 'familySize',
     data: {
-        'data-storage': "localStorage"
+        'data-storage': "localStorage",
+        'data-type': "number"
     },
     spinnerLabel: 'family size',
     type: null,
@@ -167,7 +173,7 @@ const familySizeTemplate = {
     max: '99',
     tooltip: {
         ariaLabel: 'Help on how to determine family size',
-        text: 'Family size includes you, your spouse (if applicable), as well as any relative receiving greater than half of their financial support from your household.&#10;&#10;If married filing separately, it is assumed the borrowers are living together and the borrower with the higher AGI claims all dependents. Data may be entered as if single for unsupported use cases.'
+        text: 'Family size includes you, your spouse (if applicable), as well as any relative receiving greater than half of their financial support from your household.&#10;&#10;If married filing separately, it is assumed the borrowers are living together and the borrower with the higher AGI claims all dependents.'
     },
     help: true,
     prepend: false
@@ -179,7 +185,8 @@ const dependentTemplate = {
     ariaLabel: 'child dependents',
     id: 'dependents',
     data: {
-        'data-storage': "localStorage"
+        'data-storage': "localStorage",
+        'data-type': "number"
     },
     spinnerLabel: 'child dependents',
     type: null,
@@ -315,7 +322,7 @@ const pslfTemplate = {
     tooltip: false,
     options: {
         'no': 'Not Eligible',
-        'yes': 'PSLF Eligible'
+        'yes': 'Eligible'
     },
     help: false,
     prepend: true,
@@ -506,8 +513,8 @@ function getRowTemplate(borrower, loanNumber) {
                                         <span class="unit">$</span>
                                         <input id="${borrower}_loan${loanNumber}_principal"
                                             name="${borrower}_loan${loanNumber}_principal"
-                                            type="number"
-                                            data-storage="localStorage"${(isSpouse) ? ' data-tag="spouseField"' : ''}
+                                            type="text"
+                                            data-storage="localStorage" data-type="number" ${(isSpouse) ? ' data-tag="spouseField"' : ''}
                                             autocomplete="off"
                                             aria-label="Your${(borrower === 'spouse') ? ' spouse\'s ' : ' '}loan ${loanNumber} principal balance"
                                             step="0.01" min="0.01" max="999999.99" ${(disabled) ? 'disabled' : 'required'}>
@@ -521,8 +528,8 @@ function getRowTemplate(borrower, loanNumber) {
                                         <span class="unit">$</span>
                                         <input id="${borrower}_loan${loanNumber}_interest"
                                             name="${borrower}_loan${loanNumber}_interest"
-                                            type="number"
-                                            data-storage="localStorage"${(isSpouse) ? ' data-tag="spouseField"' : ''}
+                                            type="text"
+                                            data-storage="localStorage" data-type="number" ${(isSpouse) ? ' data-tag="spouseField"' : ''}
                                             autocomplete="off"
                                             aria-label="Your${(borrower === 'spouse') ? ' spouse\'s ' : ' '}loan ${loanNumber} accrued interest"
                                             step="0.01" min="0" max="999999.99" ${(disabled) ? 'disabled' : 'required'}>
@@ -536,8 +543,8 @@ function getRowTemplate(borrower, loanNumber) {
                                         <span class="unit">%</span>
                                         <input id="${borrower}_loan${loanNumber}_rate"
                                             name="${borrower}_loan${loanNumber}_rate"
-                                            type="number"
-                                            data-storage="localStorage"${(isSpouse) ? ' data-tag="spouseField" ' : ' '}data-field="${borrower}LoanRate"
+                                            type="text"
+                                            data-storage="localStorage" data-type="number" ${(isSpouse) ? ' data-tag="spouseField" ' : ' '}data-field="${borrower}LoanRate"
                                             autocomplete="off"
                                             aria-label="Your${(borrower === 'spouse') ? ' spouse\'s ' : ' '}loan ${loanNumber} interest rate"
                                             step="0.01" min="0" max="99.99" ${(disabled) ? 'disabled' : 'required'}>

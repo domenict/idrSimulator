@@ -32,10 +32,13 @@ const INCOME_BRACKETS = {
     ]
 }
 
-Number.prototype.roundDecimals = function roundDecimals(places) {
-    const offset = Math.pow(10, places);
-    return Math.round(this * offset) / offset; 
-}
+Object.defineProperty(Number.prototype, 'roundDecimals', {
+    value: function(places) {
+        const offset = Math.pow(10, places);
+        return Math.round(this * offset) / offset; 
+    },
+    enumerable: false
+});
 
 /* -------------------------------------------------
     MAIN
@@ -59,7 +62,6 @@ function calculatePayments(data) {
         // This is only generated once with base user input and is not updated as repayment is simulated
         // Heuristics:
         //      Avalanche: Lowest Balance   - Highest interest rate, lowest balance
-        //      Avalanche: Highest Accrual  - Highest interest rate, highest interest accrual
         //      Immediate Bleed             - Prioritizes loan generating the most interest
         //      Snowball                    - Prioritizes loan with the lowest balance
         //      Highest Minimum Payment     - Prioritizes loan with the largest minimum payment
@@ -74,7 +76,6 @@ function calculatePayments(data) {
         return 'There was an error processing your request.\nPlease refresh the page and try again.';
     }
 }
-
 
 
 /* -------------------------------------------------
@@ -182,16 +183,16 @@ function inputValidation(data, basicInfo, loans) {
                     }
                     break;
                 case "number":
-                    parsedValue = Number(value);
+                    parsedValue = value.strToNum();
                     if (isNaN(parsedValue)) return false;
-    
+
                     numberType = inputMap[i][2];
-                    if (numberType === "float" && value !== parsedValue.toFixed(2)) return false;
+                    if (numberType === "float" && value.split('.')[1].length !== 2) return false;
                     if (numberType === "integer" && parsedValue % 1 !== 0) return false;
     
                     min = inputMap[i][3];
                     max= inputMap[i][4];
-                    if (value < min || value > max) {
+                    if (parsedValue < min || parsedValue > max) {
                         return false;
                     } else {
                         writeValue = parsedValue;
@@ -271,9 +272,9 @@ function inputValidation(data, basicInfo, loans) {
                 return false;
             }
     
-            const principalValue = Number(data[principalID]);
-            const interestValue = Number(data[interestID]);
-            const rateValue = Number(data[rateID]);
+            const principalValue = data[principalID].strToNum();
+            const interestValue = data[interestID].strToNum();
+            const rateValue = data[rateID].strToNum();
             const loan = [principalValue, interestValue, rateValue];
             const loanValidationMap = [
                 [principalID, loanInputMap[0][1], loanInputMap[0][2]], 
@@ -283,10 +284,10 @@ function inputValidation(data, basicInfo, loans) {
             for (let i = 0; i < loan.length; i++) {
                 let element = loan[i];
                 if (isNaN(element)) return false;
-                if (element.toFixed(2) !== data[loanValidationMap[i][0]]) return false;
+                if (element.numToStr(data[loanValidationMap[i][0]]) !== data[loanValidationMap[i][0]]) return false;
                 if (element < loanValidationMap[i][1] || element > loanValidationMap[i][2]) return false;
             }
-    
+
             loans[borrower][loanNumber] = {
                 principal: loan[0],
                 interestAccrual: loan[1],
@@ -305,7 +306,7 @@ function inputValidation(data, basicInfo, loans) {
     IDR CERTIFICATION
 ------------------------------------------------- */
 // Married Filing Jointly = Combined AGI prorated to share of the total debt, spouse always part of family size
-// Married Filing Separately = Individual responsibility, borrower with higher AGI claims dependents while other has family size of 2
+// Married Filing Separately = Individual responsibility, borrower with higher AGI claims dependents
 function calculateMinimumPayments(basicInfo, loans, year = 0, firstYearPlanEstimates) {
     const saveToHistory = {};
     const loanSums = { 'self': getLoanSum(loans, 'self') };
@@ -450,7 +451,7 @@ function getLoanSum(loans, borrower) {
     HEURISTIC REPAYMENT ORDERING
 ------------------------------------------------- */
 function getRepaymentOrders(basicInfo, loans) { 
-    const findAvalancheLowestBalance = (loanPool) => (loanPool.sort((a,b) => {
+    const findAvalanche = (loanPool) => (loanPool.sort((a,b) => {
         if (b.data.interestRate !== a.data.interestRate) {
             return b.data.interestRate - a.data.interestRate;
         }
@@ -458,16 +459,6 @@ function getRepaymentOrders(basicInfo, loans) {
         const aBalance = a.data.principal + a.data.interestAccrual;
         const bBalance = b.data.principal + b.data.interestAccrual;
         return aBalance - bBalance;
-    }));
-
-    const findAvalancheHighestAccrual = (loanPool) => (loanPool.sort((a,b) => {
-        if (b.data.interestRate !== a.data.interestRate) {
-            return b.data.interestRate - a.data.interestRate;
-        }
-
-        const aAccrual = (a.data.interestRate / 100 * a.data.principal);
-        const bAccrual = (b.data.interestRate / 100 * b.data.principal);
-        return bAccrual - aAccrual;
     }));
 
     const findImmediateBleed = (loanPool) => (loanPool.sort((a,b) => {
@@ -503,10 +494,9 @@ function getRepaymentOrders(basicInfo, loans) {
     
     const repaymentOrders = {};
     const heuristics = {
-        avalancheLowestBalance: findAvalancheLowestBalance,
-        avalancheHighestAccrual: findAvalancheHighestAccrual,
-        debtSnowballLowestBalance: findSnowball,
-        immediateBleedHighestAccrual: findImmediateBleed,
+        avalanche: findAvalanche,
+        debtSnowball: findSnowball,
+        immediateBleed: findImmediateBleed,
         highestMinPayment: findHighestMinPayment
     };
     Object.keys(heuristics).forEach(hKey => {

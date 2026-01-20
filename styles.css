@@ -38,7 +38,6 @@
     --color-font-pholder:    #bbbbbb;
     --color-border-wrapper:  #e0e0e0;
     --color-border-input:    #cccccc;
-    --color-border-contrast: #aaaaaa;            /* disabled border, radio hover */
     --color-scrollbar-thumb: #2c3e50; 
 
     /* === Light Shadows === */
@@ -657,7 +656,6 @@ input::placeholder { color:var(--color-font-pholder); }
     position: relative; 
     width: 100%; 
     opacity: 1;
-    transition: opacity var(--trans-fast) ease;
     border-radius: var(--radius-sm);
     transition: 
         background-color var(--trans-fast) ease,
@@ -665,18 +663,26 @@ input::placeholder { color:var(--color-font-pholder); }
         opacity var(--trans-fast) ease;
 }
 
-.input-wrapper.incomeGrowthDisabled {
-    background-color: var(--color-bg-disabled);
-    border-color: var(--color-border-contrast);
+.input-wrapper input,
+.input-wrapper span.unit {
+    opacity: 1;
+    transition: 
+        background-color var(--trans-fast) ease,
+        border-color var(--trans-fast) ease,
+        opacity var(--trans-fast) ease;
 }
 
-.input-wrapper.incomeGrowthDisabled input,
-.input-wrapper.incomeGrowthDisabled span.unit {
+.input-wrapper.inputDisabled {
+    background-color: var(--color-bg-disabled);
+}
+
+.input-wrapper.inputDisabled input,
+.input-wrapper.inputDisabled span.unit {
     opacity: var(--disabled-opacity);
     cursor: not-allowed; 
 }
 
-.input-wrapper.incomeGrowthDisabled .spinner-btn {
+.input-wrapper.inputDisabled .spinner-btn {
     visibility: hidden;
 }
 
@@ -695,12 +701,12 @@ input::placeholder { color:var(--color-font-pholder); }
     transform: translateY(-50%); 
     font-size: var(--font-size-base);
     pointer-events: none;
+    z-index: 1;
 }
 
 .input-wrapper.percent input { 
     height: var(--space-9);
     line-height: var(--line-height-input);
-    background: transparent;
 }
 
 .input-wrapper.percent span.unit { 
@@ -715,12 +721,12 @@ input::placeholder { color:var(--color-font-pholder); }
     width: calc(var(--space-8) + var(--space-1));
     margin: 0 auto;
     text-align: center;
-    outline: var(--border-input);
-    outline-offset: -1px;
     border-top-right-radius: var(--radius-sm);
     border-bottom-right-radius: var(--radius-sm);
+    border-left: var(--border-input);
     line-height: var(--line-height-input);
     background-color: var(--color-bg-percent);
+    z-index: 1;
 }
 
 .input-wrapper > * {
@@ -992,21 +998,25 @@ input::placeholder { color:var(--color-font-pholder); }
     position: relative;
 }
 
-.loan-table td:nth-child(2) { padding-left: 0; }
+.loan-table td:nth-child(2) { padding-left: 0; min-width: calc(var(--space-9) * 3.125);}
+.loan-table td:nth-child(3) { min-width: calc(var(--space-9) * 3.25);}
 .loan-table td:nth-child(4) { padding-right: 0; }
 
 .loan-table td.row-label {
     text-align: center;
     font-weight: var(--weight-semi);
     font-size: var(--font-size-med);
-    min-width: calc(var(--space-9) * 2);
+    min-width: calc(var(--space-9) * 2.25);
     line-height: var(--line-height-input);
     height: var(--space-9);
+    opacity: 1;
+    transition: opacity var(--trans-fast) ease;
 }
 
 .loan-table td.btn-cell {
+    display: flex;
     gap: var(--space-2);
-    width: calc(var(--space-5) * 5.75);
+    width: calc(var(--space-5) * 8);
     padding: var(--space-2) var(--space-3) 0 var(--space-4);
 }
 
@@ -1018,14 +1028,26 @@ input::placeholder { color:var(--color-font-pholder); }
 }
 
 .loan-table .addLoan,
-.loan-table .deleteLoan {
+.loan-table .deleteLoan,
+.loan-table .toggleLoan {
+    display: flex;
+    align-items: center;
+    justify-content: center;
     height: var(--space-9);
     width: var(--space-9);
     min-width: fit-content;
     font-size: var(--font-size-med);
     padding: 0;
+    margin: 0;
     box-shadow: none;
+    position: relative;
 }
+
+.toggleLoan .slash { transition: opacity var(--trans-fast) ease; }
+tr:has(.toggleLoan[data-enabled="false"]) .row-label { opacity: var(--disabled-opacity); }
+.toggleLoan[data-enabled="true"] .slash, .toggleLoan[data-enabled="false"]:hover .slash { opacity: 0; }
+.toggleLoan[data-enabled="false"] .slash, .toggleLoan[data-enabled="true"]:hover .slash { opacity: 1; }
+
 
 /* -------------------------------------------------
     DISCLAIMER & RESULTS
@@ -1159,7 +1181,8 @@ input::placeholder { color:var(--color-font-pholder); }
     }
 
     .loan-table .addLoan,
-    .loan-table .deleteLoan {
+    .loan-table .deleteLoan,
+    .loan-table .toggleLoan {
         flex: 1;
         text-align: center;
     }
@@ -1171,16 +1194,12 @@ input::placeholder { color:var(--color-font-pholder); }
     #disclaimer { font-size: calc(var(--font-size-sm) * 0.95); }
 }
 
-/* Cleaner break for disclaimer formatting */
-@media (max-width: 420px) {
-    #disclaimer { width: 80%; }
-}
-
 /* Point at which loan row labels start breaking */
-@media (max-width: 400px) {
+@media (max-width: 430px) {
     .title-header-wrapper { width: 100%; }
     .title-header { font-size: calc(7vw * 0.8); }
     .title-header span { font-size: 7vw; }
+    #disclaimer { width: 80%; }
 
     .field input,
     .select-trigger,
@@ -1213,7 +1232,6 @@ input::placeholder { color:var(--color-font-pholder); }
     }
 
     .loan-table td input { width: 100%; }
-
 }
 
 /* Supports recommended minimum 320px but smoother transition at 330px  */

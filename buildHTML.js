@@ -20,7 +20,7 @@ function getNumberInputFromTemplate(template, borrower) {
                                 type="text"${(template.class) ? '\n                                class="' + template.class + '"' : ''}
                                 ${getDataAttributesFromTemplate(template.data)}${(borrower === 'spouse') ? ' data-tag="spouseField"' : ''}
                                 autocomplete="off"
-                                ${(template.placeholder) ? 'placeholder="' + template.placeholder + '" ' : ''}${(template.value) ? 'value="' + template.value + '" ' : ''}step="${template.step}" min="${template.min}" max="${template.max}" ${(borrower === 'spouse') ? 'disabled' : 'required'}>
+                                ${(template.placeholder) ? 'placeholder="' + template.placeholder + '" ' : ''}${(template.value) ? 'value="' + template.value + '" ' : ''}step="${template.step}" min="${template.min}" max="${template.max}" required ${(borrower === 'spouse') ? 'disabled ' : ''}>
                             <span class="error-message"></span>
                             <button type="button" class="spinner-btn spinner-up"   aria-label="Increase ${spinnerLabel}" tabindex="-1"></button>
                             <button type="button" class="spinner-btn spinner-down" aria-label="Decrease ${spinnerLabel}" tabindex="-1"></button>
@@ -230,12 +230,12 @@ function getSelectFromTemplate(template, borrower) {
 
                     <!-- Add a real hidden input for form submission & localStorage -->
                     <input type="hidden" 
-                           id="${id}" 
-                           name="${id}" 
-                           class="hidden-select-input"
-                           value="${Object.keys(template.options)[0]}"
-                           ${getDataAttributesFromTemplate(template.data)}
-                           ${(borrower === 'spouse' || template.spouseDiv) ? 'data-tag="spouseField" disabled' : 'required'}>
+                        id="${id}" 
+                        name="${id}" 
+                        class="hidden-select-input"
+                        value="${Object.keys(template.options)[0]}"
+                        ${getDataAttributesFromTemplate(template.data)}
+                        ${(borrower === 'spouse' || template.spouseDiv) ? 'data-tag="spouseField" required disabled ' : 'required'}>
                 </div>
             </div>`;
 }
@@ -504,7 +504,7 @@ function getLoansFromTemplate(borrower) {
 function getRowTemplate(borrower, loanNumber) {
     const isSpouse = borrower === 'spouse';
     const disabled = isSpouse && window.getComputedStyle(document.getElementById("spouseBlock")).getPropertyValue('display') === 'none';
-    return `<tr id="${borrower}_loan${loanNumber}">
+    return `<tr id="${borrower}_loan${loanNumber}" aria-disabled="false">
                                 <td class="row-label">
                                     <span id="${borrower}_loan${loanNumber}_span">Loan ${loanNumber}</span>
                                 </td>
@@ -517,7 +517,7 @@ function getRowTemplate(borrower, loanNumber) {
                                             data-storage="localStorage" data-type="number" ${(isSpouse) ? ' data-tag="spouseField"' : ''}
                                             autocomplete="off"
                                             aria-label="Your${(borrower === 'spouse') ? ' spouse\'s ' : ' '}loan ${loanNumber} principal balance"
-                                            step="0.01" min="0.01" max="999999.99" ${(disabled) ? 'disabled' : 'required'}>
+                                            step="0.01" min="0.01" max="999999.99" required ${(disabled) ? 'disabled' : ''}>
                                         <span class="error-message"></span>
                                         <button type="button" class="spinner-btn spinner-up"   aria-label="Increase loan ${loanNumber} principal amount" tabindex="-1"></button>
                                         <button type="button" class="spinner-btn spinner-down" aria-label="Decrease loan ${loanNumber} principal amount" tabindex="-1"></button>
@@ -532,7 +532,7 @@ function getRowTemplate(borrower, loanNumber) {
                                             data-storage="localStorage" data-type="number" ${(isSpouse) ? ' data-tag="spouseField"' : ''}
                                             autocomplete="off"
                                             aria-label="Your${(borrower === 'spouse') ? ' spouse\'s ' : ' '}loan ${loanNumber} accrued interest"
-                                            step="0.01" min="0" max="999999.99" ${(disabled) ? 'disabled' : 'required'}>
+                                            step="0.01" min="0" max="999999.99" required ${(disabled) ? 'disabled' : ''}>
                                         <span class="error-message"></span>
                                         <button type="button" class="spinner-btn spinner-up"   aria-label="Increase loan ${loanNumber} accrued interest" tabindex="-1"></button>
                                         <button type="button" class="spinner-btn spinner-down" aria-label="Decrease loan ${loanNumber} accrued interest" tabindex="-1"></button>
@@ -547,13 +547,19 @@ function getRowTemplate(borrower, loanNumber) {
                                             data-storage="localStorage" data-type="number" ${(isSpouse) ? ' data-tag="spouseField" ' : ' '}data-field="${borrower}LoanRate"
                                             autocomplete="off"
                                             aria-label="Your${(borrower === 'spouse') ? ' spouse\'s ' : ' '}loan ${loanNumber} interest rate"
-                                            step="0.01" min="0" max="99.99" ${(disabled) ? 'disabled' : 'required'}>
+                                            step="0.01" min="0" max="99.99" required ${(disabled) ? 'disabled' : ''}>
                                         <span class="error-message"></span>
                                         <button type="button" class="spinner-btn spinner-up"   aria-label="Increase loan ${loanNumber} interest rate" tabindex="-1"></button>
                                         <button type="button" class="spinner-btn spinner-down" aria-label="Decrease loan ${loanNumber} interest rate" tabindex="-1"></button>
                                     </div>
                                 </td>
                                 <td class="btn-cell">
+                                    <button id="${borrower}_loan${loanNumber}_toggle" type="button" class="toggleLoan" data-enabled="true" aria-label="Disable loan ${loanNumber}" tabindex="0">
+                                        <svg width="11" height="11" viewBox="0 0 11 11" fill="none" stroke="currentColor" stroke-width="1" stroke-linecap="round" stroke-linejoin="round">
+                                            <circle cx="5.5" cy="5.5" r="5"/>
+                                            <line class="slash" x1="2" y1="2" x2="9" y2="9" stroke-width="1"/>
+                                        </svg>
+                                    </button>
                                     <button id="${borrower}_loan${loanNumber}_add" type="button" class="addLoan" aria-label="Add new loan after loan ${loanNumber}" tabindex="0">+</button>
                                     <button id="${borrower}_loan${loanNumber}_delete" type="button" class="deleteLoan" aria-label="Remove loan ${loanNumber}" tabindex="0">−</button>
                                 </td>

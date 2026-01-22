@@ -150,10 +150,8 @@ function addFormListeners() {
     document.querySelectorAll('.select-wrapper').forEach(wrapper => createSelectListeners(wrapper));
 
     // Plan type changes qualifiedPayments min/max and placeholder
-    const repaymentPlans = Array.from(document.querySelectorAll('[data-field="repaymentPlan"]'));
-    repaymentPlans.forEach(element => { element.addEventListener('change', repaymentPlanListenerHandler)});
-    const pslfEligibility = Array.from(document.querySelectorAll('[data-field="pslfEligibility"]'));
-    pslfEligibility.forEach(element => { element.addEventListener('change', repaymentPlanListenerHandler)});
+    const clampQualifiedPayments = Array.from(document.querySelectorAll('[data-field="repaymentPlan"], [data-field="pslfEligibility"]'));
+    clampQualifiedPayments.forEach(element => { element.addEventListener('change', repaymentPlanListenerHandler)});
 
     // Adding/removing dependents updates family size minimum
     document.getElementById('dependents').addEventListener('change', updateFamilySizeMinHandler);
@@ -591,7 +589,7 @@ async function loadFromStorage(passphrase, savedSession) {
                 for (index; index < options.length; index++) {
                     if (options[index].getAttribute('data-value') === element.value) break;
                 }
-                setSelectOption(options[index]);
+                setSelectOption(options[index], { suppressEvents: true });
             }
         } else {
             const radios = Array.from(document.getElementsByName(key)).filter(input => input.type === 'radio');
@@ -647,8 +645,9 @@ async function saveToStorage(passphrase) {
 
 // Creates worker blob to offload heavy encryption compute for improved UI -- code by Grok
 function createCryptoWorker() {
+    const libPath = new URL('js/dependencies/argon2-bundled.min.js', window.location.href).href;
     const workerScript = `
-        importScripts('https://unpkg.com/argon2-browser@1/dist/argon2-bundled.min.js');
+        importScripts('${libPath}');
 
         const encoder = new TextEncoder();
         const decoder = new TextDecoder();
@@ -867,7 +866,7 @@ async function clearSessions() {
         // Reset custom selects
         document.querySelectorAll('.select-wrapper').forEach(wrapper => {
             const { options } = getSelectComponents(wrapper);
-            setSelectOption(options[0]);
+            setSelectOption(options[0], { suppressEvents: true });
         });
 
         // Remove added DOM rows
@@ -1025,7 +1024,7 @@ function repaymentPlanToggle(element) {
     
     const key = qualifiedPaymentsElement.id + ".metPlanMax";
     if (cache[key] !== undefined) {
-        if (cache[key] < maxPayments) {
+        if (cache[key] <= maxPayments) {
             qualifiedPaymentsElement.value = cache[key];
             delete cache[key];
         } else {
@@ -1081,7 +1080,6 @@ function toggleMarriedListenerHandler() {
     updateFamilySizeMin();
 }
 function toggleMarried(isMarried) {
-    const priorityField = document.querySelector('[aria-labelledby="priority-legend"]').closest('.radio-field');
     const spouseBlock = document.getElementById("spouseBlock");
     const spouseDivs = document.getElementsByClassName("spouseDiv");
     const spouseFields = document.querySelectorAll('[data-tag="spouseField"]');
@@ -1089,7 +1087,7 @@ function toggleMarried(isMarried) {
 
     if (isMarried) {
         // Adjust spacer first before any re-paints
-        const removeFromOffset = spouseBlock.offsetHeight + priorityField.offsetHeight;
+        const removeFromOffset = spouseBlock.offsetHeight;
         removeFromSpacer(removeFromOffset);
         spouseBlock.style.display = 'grid';
 
@@ -1113,7 +1111,7 @@ function toggleMarried(isMarried) {
     } else {
         // Adjust spacer first before any re-paints
         const offset = parseInt(window.getComputedStyle(document.getElementById("calcForm")).getPropertyValue('gap')) || 0;
-        const addToOffset = spouseBlock.offsetHeight + priorityField.offsetHeight;
+        const addToOffset = spouseBlock.offsetHeight;
         addToSpacer(addToOffset, offset); // offset 1rem due to calcForm gap
         spouseBlock.style.display = 'none';
 
@@ -1352,14 +1350,17 @@ function getSelectComponents(target) {
     }
 }
 
-function setSelectOption(option) {
+function setSelectOption(option, suppressEvents = false) {
     const { dropdown, options, valueSpan, hiddenInput } = getSelectComponents(option);
     options.forEach(o => o.removeAttribute('aria-selected'));
     option.setAttribute('aria-selected', 'true');
     dropdown.setAttribute('aria-activedescendant', option.id);
     valueSpan.textContent = option.textContent;
     hiddenInput.value = option.dataset.value;
-    hiddenInput.dispatchEvent(new Event('change'));
+
+    if (!suppressEvents) {
+        hiddenInput.dispatchEvent(new Event('change', { bubbles: true }));
+    }
 }
 
 function handleSelectOpen(e) {

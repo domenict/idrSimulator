@@ -1035,8 +1035,14 @@ function repaymentPlanToggle(element) {
         qualifiedPaymentsElement.value = maxPayments.toString();
     }
 
+    // For accessibility 
     const selectList = document.querySelector(`[data-id="${repaymentPlanElement.id}"]`).querySelector('.select-dropdown');
     const planShort = selectList.querySelector(`li[data-value="${repaymentPlan}"]`).textContent;
+    const description = `Your${(borrower === 'spouse') ? ' spouse\'s' : ''} number of payments made (maximum ${maxPayments} ${(pslfEligible) ? 'through PSLF' : 'on ' + planShort + ' plan'})`
+    const wrapper = qualifiedPaymentsElement.closest('.input-wrapper');
+    qualifiedPaymentsElement.setAttribute('aria-label', description);
+    wrapper.querySelector('.spinner-up').setAttribute('aria-label', `Increase ${description.charAt(0).toLowerCase() + description.slice(1)}`);
+    wrapper.querySelector('.spinner-down').setAttribute('aria-label', `Decrease ${description.charAt(0).toLowerCase() + description.slice(1)}`);
     
     let message;
     if (id === borrower + '_pslfEligible') {

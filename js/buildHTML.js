@@ -1,252 +1,240 @@
 /* *************************************************************************************************
-************************                     TEMPLATES                      ************************
+************************                    FIELD TEMPLATES                 ************************
 ************************************************************************************************* */
 
 /* -------------------------------------------------
     NUMBER INPUTS
 ------------------------------------------------- */
-function getNumberInputFromTemplate(template, borrower) {
-    const id = (template.prepend) ? borrower + '_' + template.id : template.id;
-    const unitSpan = (template.type) ? (template.type === 'dollar') ? `<span class="unit">$</span>` : `<span class="unit">%</span>` : null;
-    const spinnerLabel = (template.prepend) ? (borrower === 'self') ? 'your ' + template.spinnerLabel : "your spouse's " + template.spinnerLabel : template.spinnerLabel;
+function getNumberInputFromTemplate(template, borrower = null) {
+    const id = (borrower) ? borrower + '_' + template.id : template.id;
+    const type = template.type;
+    const label = template.label;
+    const tooltip = template.tooltip;
+    const data = template.data;
+    const placeholder = template.placeholder;
+    const value = template.value;
+    const step = template.step;
+    const min = template.min;
+    const max = template.max;
+    const disabled = borrower === 'spouse';
+
+    const divClasses = `input-wrapper${(type) ? ' ' + type : ''}`;
+    const unitSpan = (type) ? (type === 'dollar') ? `<span class="unit">$</span>` : `<span class="unit">%</span>` : null;
+    
+    const additionalAttributes = `${(borrower === 'spouse') ? ' data-tag="spouseField"' : ''}`;
+    const addData = (additionalAttributes !== '') ? additionalAttributes : null;
+
+    const prefix = (borrower === 'spouse') ? 'Your spouse\'s ' : 'Your ';
+    const description = prefix + template.description;
+    const partialDescription = description.charAt(0).toLowerCase() + description.slice(1);
+
     const divHTML = 
         `<div class="field">
             <label for="${id}">
-                ${template.label}${(template.help) ? getToolTipFromTemplate(template.tooltip, id) : '' }
+                ${label}${(tooltip) ? getToolTipFromTemplate(tooltip, id) : '' }
             </label>
-            <div class="input-wrapper${(template.type) ? ' ' + template.type : '' }">
+            <div class="${divClasses}">
                 ${(unitSpan) ? unitSpan : ''}
                 <input id="${id}"
                     name="${id}"
-                    aria-label="Your${(borrower === 'spouse') ? ' spouse\'s ' : ' '}${template.ariaLabel}"
+                    aria-label="${description}"
                     type="text"
-                    class="${(template.class) ? template.class : ''}"
-                    ${getDataAttributesFromTemplate(template.data)}
-                    ${(borrower === 'spouse') ? ' data-tag="spouseField"' : ''}
+                    ${getDataAttributesFromTemplate(data, addData)}
                     autocomplete="off"
-                    placeholder="${(template.placeholder) ? template.placeholder : ''}"
-                    value="${(template.value) ? template.value : ''}"
-                    step="${template.step}" 
-                    min="${template.min}" 
-                    max="${template.max}" 
+                    placeholder="${(placeholder) ? placeholder : ''}"
+                    value="${(value) ? value : ''}"
+                    step="${step}"
+                    min="${min}"
+                    max="${max}"
                     required
-                    ${(borrower === 'spouse') ? 'disabled ' : ''}>
+                    ${(disabled) ? 'disabled' : ''}>
                 <span class="error-message"></span>
-                <button type="button" class="spinner-btn spinner-up"    aria-label="Increase ${spinnerLabel}" tabindex="-1"></button>
-                <button type="button" class="spinner-btn spinner-down"  aria-label="Decrease ${spinnerLabel}" tabindex="-1"></button>
+                <button type="button" class="spinner-btn spinner-up" aria-label="Increase ${partialDescription}" tabindex="-1"></button>
+                <button type="button" class="spinner-btn spinner-down" aria-label="Decrease ${partialDescription}" tabindex="-1"></button>
             </div>
         </div>`;
     return divHTML;
 }
 
 const monthlyOverpaymentTemplate = {
-    input: 'number',
-    label: 'Monthly Overpayment',
-    ariaLabel: 'monthly overpayment amount (in dollars)',
-    id: 'monthlyOverpayment',
-    data: {
-        'data-storage': "localStorage",
-        'data-type': "number"
+    'input': 'number',
+    'label': 'Monthly Overpayment',
+    'description': 'monthly overpayment amount (in dollars)',
+    'id': 'monthlyOverpayment',
+    'data': {
+        'data-storage': 'localStorage',
+        'data-type': 'number'
     },
-    spinnerLabel: 'the monthly overpayment amount',
-    type: 'dollar',
-    class: null,
-    value: '0.00',
-    placeholder: null,
-    step: '0.01',
-    min: '0.00',
-    max: '999999999.99',
-    tooltip: {
-        ariaLabel: 'Help about monthly overpayment',
-        text: 'An excess payment in addition to the monthly minimum determined by your selected plan(s) and applied to all borrowers. The default is set for minimum monthly payments.'
-    },
-    help: true,
-    prepend: true,
+    'type': 'dollar',
+    'value': '0.00',
+    'step': '0.01',
+    'min': '0.00',
+    'max': '999999999.99',
+    'tooltip': {
+        'ariaLabel': 'Help about monthly overpayment',
+        'text': 'An excess payment in addition to the monthly minimum determined by your selected plan(s) and applied to all borrowers. The default is set for minimum monthly payments.'
+    }
 }
 
 const agiTemplate = {
-    input: 'number',
-    label: 'Annual AGI (Income)',
-    id: 'agi',
-    ariaLabel: 'annual adjusted gross income (in dollars)',
-    data: {
-        'data-storage': "localStorage",
-        'data-type': "number"
+    'input': 'number',
+    'label': 'Annual AGI (Income)',
+    'id': 'agi',
+    'description': 'annual adjusted gross income amount (in dollars)',
+    'data': {
+        'data-storage': 'localStorage',
+        'data-type': 'number'
     },
-    spinnerLabel: 'annual adjusted gross income amount',
-    type: 'dollar',
-    class: null,
-    value: `0.00`,
-    placeholder: null,
-    step: '0.01',
-    min: '0.00',
-    max: '999999999.99',
-    tooltip: {
-        ariaLabel: 'Help about annual adjusted gross income entry',
-        text: 'AGI (Adjusted Gross Income) is the total gross salary minus applicable deductions which may include 401(k) and HSA/FSA contributions, interest premiums or student loan interest payments (up to $2500). The exact amount can be found on line 11 of your most recent tax return (Form 1040).'
-    },
-    help: true,
-    prepend: true
+    'type': 'dollar',
+    'value': '0.00',
+    'step': '0.01',
+    'min': '0.00',
+    'max': '999999999.99',
+    'tooltip': {
+        'ariaLabel': 'Help about annual adjusted gross income entry',
+        'text': 'AGI (Adjusted Gross Income) is the total gross salary minus applicable deductions which may include 401(k) and HSA/FSA contributions, interest premiums or student loan interest payments (up to $2500). The exact amount can be found on line 11 of your most recent tax return (Form 1040).'
+    }
 }
 
 const annualGrowthTemplate = {
-    input: 'number',
-    label: 'Annual Income Growth',
-    ariaLabel: 'annual income growth (in percent)',
-    id: 'annualGrowth',
-    data: {
-        'data-storage': "localStorage",
-        'data-type': "number",
-        'data-field': "incomeGrowth"
+    'input': 'number',
+    'label': 'Annual Income Growth',
+    'description': 'annual income growth rate (in percent)',
+    'id': 'annualGrowth',
+    'data': {
+        'data-storage': 'localStorage',
+        'data-type': 'number'
     },
-    spinnerLabel: 'annual income growth rate',
-    type: 'percent',
-    class: 'incomeGrowth',
-    value: '0.00',
-    placeholder: null,
-    step: '0.01',
-    min: '0.00',
-    max: '99.99',
-    tooltip: {
-        ariaLabel: 'Help about annual growth features',
-        text: 'For a conservative estimate, the median U.S. annual income growth has been 3.8% over the last 30 years.'
-    },
-    help: true,
-    prepend: true
+    'type': 'percent',
+    'value': '0.00',
+    'step': '0.01',
+    'min': '0.00',
+    'max': '99.99',
+    'tooltip': {
+        'ariaLabel': 'Help about annual growth features',
+        'text': 'For a conservative estimate, the median U.S. annual income growth has been 3.8% over the last 30 years.'
+    }
 }
 
 const qualifiedPaymentsTemplate = {
-    input: 'number',
-    label: 'Payments Made',
-    id: 'qualifiedPayments',
-    ariaLabel: 'number of payments made (maximum 360 on RAP plan)',
-    data: {
-        'data-storage': "localStorage",
-        'data-type': "number",
-        'data-field': "qualifiedPayments"
+    'input': 'number',
+    'label': 'Payments Made',
+    'id': 'qualifiedPayments',
+    'description': 'number of payments made (maximum 360 on RAP plan)',
+    'data': {
+        'data-storage': 'localStorage',
+        'data-type': 'number',
+        'data-field': 'qualifiedPayments'
     },
-    spinnerLabel: 'number of payments made', 
-    type: null,
-    class: null,
-    value: null,
-    placeholder: 'Forgiveness at 360',
-    step: '1',
-    min: '0',
-    max: '360',
-    tooltip: {
-        ariaLabel: 'Help about determining current number of qualified payments',
-        text: 'Number of qualifying monthly payments made towards your public student loans. For an exact number, log into StudentAid.gov, search for \'NSLDS Payment Counter Summary\' and paste the link found. Input the difference of the plan maximum and the repayment counter into this field.'
-    },
-    help: true,
-    prepend: true
+    'placeholder': 'Forgiveness at 360',
+    'step': '1',
+    'min': '0',
+    'max': '360',
+    'tooltip': {
+        'ariaLabel': 'Help about determining current number of qualified payments',
+        'text': 'Number of qualifying monthly payments made towards your public student loans. For an exact number, log into StudentAid.gov, search for \'NSLDS Payment Counter Summary\' and paste the link found. Input the difference of the plan maximum and the repayment counter into this field.'
+    }
 }
 
 const standardCapTemplate = {
-    input: 'number',
-    label: 'Permanent Standard',
-    ariaLabel: 'permanent standard amount (in dollars)',
-    id: 'standardCap',
-    data: {
-        'data-storage': "localStorage",
-        'data-type': "number"
+    'input': 'number',
+    'label': 'Permanent Standard',
+    'description': 'permanent standard amount (in dollars)',
+    'id': 'standardCap',
+    'data': {
+        'data-storage': 'localStorage',
+        'data-type': 'number'
     },
-    spinnerLabel: 'the permanent standard amount',
-    type: 'dollar',
-    class: null,
-    value: '0.00',
-    placeholder: null,
-    step: '0.01',
-    min: '0.00',
-    max: '999999999.99',
-    tooltip: {
-        ariaLabel: 'Help about understanding permanent standard',
-        text: 'The 10-year standard payment amount that is calculated when enrolled in IBR. Minimum payments cannot exceed this amount while on the plan. If new to IDR, keep this value at the default to calculate it for you.'
-    },
-    help: true,
-    prepend: true,
+    'type': 'dollar',
+    'value': '0.00',
+    'step': '0.01',
+    'min': '0.00',
+    'max': '999999999.99',
+    'tooltip': {
+        'ariaLabel': 'Help about understanding permanent standard',
+        'text': 'The 10-year standard payment amount that is calculated when enrolled in IBR. Minimum payments cannot exceed this amount while on the plan. If new to IDR, keep this value at the default to calculate it for you.'
+    }
 }
 const familySizeTemplate = {
-    input: 'number',
-    label: 'Family Size',
-    ariaLabel: 'family size',
-    id: 'familySize',
-    data: {
-        'data-storage': "localStorage",
-        'data-type': "number"
+    'input': 'number',
+    'label': 'Family Size',
+    'description': 'family size',
+    'id': 'familySize',
+    'data': {
+        'data-storage': 'localStorage',
+        'data-type': 'number'
     },
-    spinnerLabel: 'family size',
-    type: null,
-    class: null,
-    value: '1',
-    placeholder: null,
-    step: '1',
-    min: '1',
-    max: '99',
-    tooltip: {
-        ariaLabel: 'Help on how to determine family size',
-        text: 'Family size includes you, your spouse (if applicable), as well as any relative receiving greater than half of their financial support from your household. If married filing separately, it is assumed the borrowers are living together and the borrower with the higher AGI claims all dependents.'
-    },
-    help: true,
-    prepend: false
+    'value': '1',
+    'step': '1',
+    'min': '1',
+    'max': '99',
+    'tooltip': {
+        'ariaLabel': 'Help on how to determine family size',
+        'text': 'Family size includes you, your spouse (if applicable), as well as any relative receiving greater than half of their financial support from your household. If married filing separately, it is assumed the borrowers are living together and the borrower with the higher AGI claims all dependents.'
+    }
 }
 
 const dependentTemplate = {
-    input: 'number',
-    label: 'Child Dependents',
-    ariaLabel: 'child dependents',
-    id: 'dependents',
-    data: {
-        'data-storage': "localStorage",
-        'data-type': "number"
+    'input': 'number',
+    'label': 'Child Dependents',
+    'description': 'child dependents',
+    'id': 'dependents',
+    'data': {
+        'data-storage': 'localStorage',
+        'data-type': 'number'
     },
-    spinnerLabel: 'child dependents',
-    type: null,
-    class: null,
-    value: "0",
-    placeholder: null,
-    step: '1',
-    min: '0',
-    max: '97',
-    tooltip: {
-        ariaLabel: 'Help on how to determine eligible dependents',
-        text: 'Child dependents are individuals 17 years of age or less.'
-    },
-    help: true,
-    prepend: false
+    'value': "0",
+    'step': '1',
+    'min': '0',
+    'max': '97',
+    'tooltip': {
+        'ariaLabel': 'Help on how to determine eligible dependents',
+        'text': 'Child dependents are individuals 17 years of age or less.'
+    }
 }
 
 /* -------------------------------------------------
     SELECT INPUTS
 ------------------------------------------------- */
 function getSelectFromTemplate(template, borrower) {
-    const id = (template.prepend) ? borrower + '_' + template.id : template.id;
+    const id = (borrower) ? borrower + '_' + template.id : template.id;
+    const label = template.label;
+    const tooltip = template.tooltip;
+    const options = template.options;
+    const data = template.data;
+    const disabled = borrower === 'spouse';
+
+    const additionalAttributes = `${(borrower === 'spouse') ? ' data-tag="spouseField"' : ''}`;
+    const addData = (additionalAttributes !== '') ? additionalAttributes : null;
+
     const divHTML = 
-        `<div class="field${(template.spouseDiv) ? ' spouseDiv' : ''}">
+        `<div class="field">
             <label for="${id}-trigger">
-                ${template.label}${(template.help) ? getToolTipFromTemplate(template.tooltip, id) : '' }
+                ${label}${(tooltip) ? getToolTipFromTemplate(tooltip, id) : '' }
             </label>
             <div class="select-wrapper" data-id="${id}">
-                <button type="button" id="${id}-trigger" class="select-trigger" aria-haspopup="listbox" aria-expanded="false" aria-label="${template.label}">
+                <button type="button" id="${id}-trigger" class="select-trigger" aria-haspopup="listbox" aria-expanded="false" aria-label="${label}">
                     <span class="select-value">
-                        ${template.options[Object.keys(template.options)[0]]}
+                        ${options[Object.keys(options)[0]]}
                     </span>
                 </button>
-                <ul 
-                    class="select-dropdown" 
-                    role="listbox" 
-                    tabindex="0" 
+                <ul
+                    class="select-dropdown"
+                    role="listbox"
+                    tabindex="0"
                     aria-activedescendant="${id}-opt-0">
-                    ${getOptionsFromTemplate(template.options, id)}
+                    ${getOptionsFromTemplate(options, id)}
                 </ul>
 
                 <!-- Add a real hidden input for form submission & localStorage -->
-                <input type="hidden" 
-                    id="${id}" 
-                    name="${id}" 
+                <input type="hidden"
+                    id="${id}"
+                    name="${id}"
                     class="hidden-select-input"
-                    value="${Object.keys(template.options)[0]}"
-                    ${getDataAttributesFromTemplate(template.data)}
-                    ${(borrower === 'spouse' || template.spouseDiv) ? 'data-tag="spouseField" required disabled ' : 'required'}>
+                    value="${Object.keys(options)[0]}"
+                    ${getDataAttributesFromTemplate(data, addData)}
+                    required
+                    ${(disabled) ? 'disabled' : ''}>
             </div>
         </div>`;
     return divHTML;
@@ -265,98 +253,80 @@ function getOptionsFromTemplate(template, id) {
 }
 
 const fixedOverpaymentTemplate = {
-    input: 'select',
-    label: 'Overpayment Scaling',
-    id: 'fixedOverpayments',
-    data: {
-        'data-storage': "localStorage"
+    'input': 'select',
+    'label': 'Overpayment Scaling',
+    'id': 'fixedOverpayments',
+    'data': {
+        'data-storage': 'localStorage'
     },
-    tooltip: {
-        ariaLabel: 'Help about overpayment scaling',
-        text: 'For scaling the overpayment amount if income is expected to grow over time. The minimum overpayment will equal the \'Monthly Overpayment\' field and will scale proportionally to the estimated total income of the household.'
+    'tooltip': {
+        'ariaLabel': 'Help about overpayment scaling',
+        'text': 'For scaling the overpayment amount if income is expected to grow over time. The minimum overpayment will equal the \'Monthly Overpayment\' field and will scale proportionally to the estimated total income of the household.'
     },
-    options: {
+    'options': {
         'yes': 'Fixed Overpayments',
         'no': 'Scale with Income Growth'
-    },
-    help: true,
-    prepend: true,
-    spouseDiv: false
+    }
 }
 
 const repaymentPlanTemplate = {
-    input: 'select',
-    label: 'Repayment Plan',
-    id: 'repaymentPlan',
-    data: {
+    'input': 'select',
+    'label': 'Repayment Plan',
+    'id': 'repaymentPlan',
+    'data': {
         'data-storage': "localStorage",
         'data-field': "repaymentPlan"
     },
-    tooltip: false,
-    options: {
+    'options': {
         'rap': 'RAP',
         'old': 'Old IBR',
         'new': 'New IBR'
-    },
-    help: false,
-    prepend: true,
-    spouseDiv: false
+    }
 }
 
 const interestReductionTemplate = {
-    input: 'select',
-    label: 'Autopay Reduction',
-    id: 'interestReduction',
-    data: {
-        'data-storage': "localStorage",
+    'input': 'select',
+    'label': 'Autopay Reduction',
+    'id': 'interestReduction',
+    'data': {
+        'data-storage': 'localStorage',
     },
-    tooltip: {
-        ariaLabel: 'Help about interest reduction features',
-        text: 'A federally mandated 0.25% reduction for public loans rates if enrolled in auto-pay that will be applied during analysis.'
+    'tooltip': {
+        'ariaLabel': 'Help about interest reduction features',
+        'text': 'A federally mandated 0.25% reduction for public loans rates if enrolled in auto-pay that will be applied during analysis.'
     },
-    options: {
+    'options': {
         'no': 'Not applicable',
         'yes': 'Enrolled in autopay'
-    },
-    help: true,
-    prepend: true,
-    spouseDiv: false
+    }
 }
 
 const pslfTemplate = {
-    input: 'select',
-    label: 'PSLF Eligibility',
-    id: 'pslfEligible',
-    data: {
-        'data-storage': "localStorage",
-        'data-field': "pslfEligibility"
+    'input': 'select',
+    'label': 'PSLF Eligibility',
+    'id': 'pslfEligible',
+    'data': {
+        'data-storage': 'localStorage',
+        'data-field': 'pslfEligibility'
     },
-    tooltip: false,
-    options: {
+    'options': {
         'no': 'Not Eligible',
         'yes': 'Eligible'
-    },
-    help: false,
-    prepend: true,
-    spouseDiv: false
+    }
 }
 
 const residencyTemplate = {
-    input: 'select',
-    label: 'Residency',
-    id: 'residency',
-    data: {
-        'data-storage': "localStorage"
+    'input': 'select',
+    'label': 'Residency',
+    'id': 'residency',
+    'data': {
+        'data-storage': 'localStorage'
     },
-    tooltip: false,
-    options: {
+    'options': {
         'us': 'Contiguous US',
         'ak': 'Alaska',
         'hi': 'Hawaii'
-    },
-    help: false,
-    prepend: false,
-    spouseDiv: false
+    }
 }
 
 
@@ -364,36 +334,52 @@ const residencyTemplate = {
     RADIO INPUTS
 ------------------------------------------------- */
 function getRadioFromTemplate(template) {
+    const divClasses = `radio-field${(template.divClass) ? ' ' + template.divClass : ''}`;
+    const legendID = template.legendId;
+    const label = template.legendLabel;
+    const radios = template.radios;
+
     const divHTML = 
-        `<div class="radio-field${(template.divClass) ? ' ' + template.divClass : ''}">
-            <fieldset class="radio-group" aria-labelledby="${template.legendId}">
-                <legend id="${template.legendId}">${template.legendLabel}</legend>
-                ${getRadioOptionsFromTemplate(template.radios)}
+        `<div class="${divClasses}">
+            <fieldset class="radio-group" aria-labelledby="${legendID}">
+                <legend id="${legendID}">${label}</legend>
+                ${getRadioOptionsFromTemplate(template, radios)}
             </fieldset>
         </div>`;
     return divHTML;
 }
 
-function getRadioOptionsFromTemplate(template) {
+function getRadioOptionsFromTemplate(template, radios) {
     let output;
-    const keys = Object.keys(template);
+    const name = template.name;
+    const data = template.data;
+    const spouseDiv = template.spouseDiv;
+
+    const additionalAttributes = `${(spouseDiv) ? ' data-tag="spouseField"' : ''}`;
+    const addData = (additionalAttributes !== '') ? additionalAttributes : null;
+
+    const keys = Object.keys(radios);
     for (let i = 0; i < keys.length; i++) {
-        const obj = template[keys[i]];
+        const id = keys[i];
+        const radio = radios[id];
+        const value = radio.value;
+        const checked = radio.checked;
+        const text = radio.text;
+
         const buttonTemplate = 
-            `<label class="radio-label" for="${keys[i]}">
-                <input type="radio" 
-                    id="${keys[i]}" 
-                    name="${obj.name}" 
-                    value="${obj.value}" 
-                    ${getDataAttributesFromTemplate(obj.data)}
-                    ${(obj.spouseDiv) ? ' data-tag="spouseField"' : ''}
-                    ${(obj.checked) ? ' checked' : ''}
-                    ${(obj.spouseDiv) ? ' disabled' : ''}>
+            `<label class="radio-label" for="${id}">
+                <input type="radio"
+                    id="${id}"
+                    name="${name}"
+                    value="${value}"
+                    ${getDataAttributesFromTemplate(data, addData)}
+                    ${(checked) ? ' checked' : ''}
+                    ${(spouseDiv) ? ' disabled' : ''}>
                 <svg class="radio-circle" viewBox="0 0 24 24" width="20" height="20" aria-hidden="true" focusable="false" tabindex="-1">
                     <circle class="radio-border" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="2" fill="none"/>
                     <circle class="radio-dot" cx="12" cy="12" r="6" fill="currentColor"/>
                 </svg>
-                <span class="radio-text">${obj.text}</span>
+                <span class="radio-text">${text}</span>
             </label>`;
         (!output) ? output = buttonTemplate : output += buttonTemplate;
     }
@@ -401,117 +387,97 @@ function getRadioOptionsFromTemplate(template) {
 }
 
 const marriedRadioTemplate = {
-    input: 'radio',
-    divClass: 'marriedDiv',
-    legendId: 'married-legend',
-    legendLabel: 'Are you legally married?',
-    radios: {
+    'input': 'radio',
+    'name': 'married',
+    'divClass': 'marriedDiv',
+    'spouseDiv': false,
+    'data': {
+        'data-storage': 'localStorage'
+    },
+    'legendId': 'married-legend',
+    'legendLabel': 'Are you legally married?',
+    'radios': {
         'married_yes': {
-            name: 'married',
-            value: 'yes',
-            data: {
-                'data-storage': "localStorage"
-            },
-            text: 'Yes',
-            checked: false,
-            spouseDiv: false
+            'value': 'yes',
+            'text': 'Yes',
+            'checked': false
         },
         'married_no' : {
-            name: 'married',
-            value: 'no',
-            data: {
-                'data-storage': "localStorage"
-            },
-            text: 'No',
-            checked: true,
-            spouseDiv: false
+            'value': 'no',
+            'text': 'No',
+            'checked': true
         }
     }
 }
 
 const filingTemplate = {
-    input: 'radio',
-    divClass: 'spouseDiv',
-    legendId: 'filing-legend',
-    legendLabel: 'How are you filing taxes?',
-    radios: {
+    'input': 'radio',
+    'name': 'filingJointly',
+    'divClass': 'spouseDiv',
+    'spouseDiv': true,
+    'data': {
+        'data-storage': 'localStorage'
+    },
+    'legendId': 'filing-legend',
+    'legendLabel': 'How are you filing taxes?',
+    'radios': {
         'filing_jointly': {
-            name: 'filingJointly',
-            value: 'yes',
-            data: {
-                'data-storage': "localStorage"
-            },
-            text: 'Jointly',
-            checked: true,
-            spouseDiv: true
+            'value': 'yes',
+            'text': 'Jointly',
+            'checked': true
         },
         'filing_separately' : {
-            name: 'filingJointly',
-            value: 'no',
-            data: {
-                'data-storage': "localStorage"
-            },
-            text: 'Separately',
-            checked: false,
-            spouseDiv: true
+            'value': 'no',
+            'text': 'Separately',
+            'checked': false
         }
     }
 }
 
 const spouseLoansTemplate = {
-    input: 'radio',
-    divClass: 'spouseDiv',
-    legendId: 'spouseLoans-legend',
-    legendLabel: 'Any spouse loans?',
-    radios: {
+    'input': 'radio',
+    'name': 'spouseHasLoans',
+    'divClass': 'spouseDiv',
+    'spouseDiv': true,
+    'data': {
+        'data-storage': 'localStorage',
+    },
+    'legendId': 'spouseLoans-legend',
+    'legendLabel': 'Any spouse loans?',
+    'radios': {
         'spouseHasLoans_true': {
-            name: 'spouseHasLoans',
-            value: 'yes',
-            data: {
-                'data-storage': "localStorage",
-            },
-            text: 'Yes',
-            checked: false,
-            spouseDiv: true
+            'value': 'yes',
+            'text': 'Yes',
+            'checked': false
         },
         'spouseHasLoans_false' : {
-            name: 'spouseHasLoans',
-            value: 'no',
-            data: {
-                'data-storage': "localStorage"
-            },
-            text: 'No',
-            checked: true,
-            spouseDiv: true
+            'value': 'no',
+            'text': 'No',
+            'checked': true
         }
     }
 }
 
 const poolOverpaymentsTemplate = {
-    input: 'radio',
-    divClass: 'spouseDiv spouseLoanDiv',
-    legendId: 'poolOverpayments-legend',
-    legendLabel: 'Pool overpayments?',
-    radios: {
+    'input': 'radio',
+    'name': 'poolOverpayments',
+    'divClass': 'spouseDiv spouseLoanDiv',
+    'spouseDiv': true,
+    'data': {
+        'data-storage': 'localStorage'
+    },
+    'legendId': 'poolOverpayments-legend',
+    'legendLabel': 'Pool overpayments?',
+    'radios': {
         'poolOverpayments_true': {
-            name: 'poolOverpayments',
-            value: 'yes',
-            data: {
-                'data-storage': "localStorage"
-            },
-            text: 'After a payoff',
-            checked: false,
-            spouseDiv: true
+            'value': 'yes',
+            'text': 'After a payoff',
+            'checked': false
         },
         'poolOverpayments_false' : {
-            name: 'poolOverpayments',
-            value: 'no',
-            data: {
-                'data-storage': "localStorage"
-            },
-            text: 'Keep separate',
-            checked: true,
-            spouseDiv: true
+            'value': 'no',
+            'text': 'Keep separate',
+            'checked': true
         }
     }
 }
@@ -535,16 +501,16 @@ function getLoansFromTemplate(borrower) {
                     </tr>
                 </thead>
                 <tbody>
-                    ${getRowTemplate(borrower, 1)}
+                    ${getRowTemplate(borrower)}
                 </tbody>
             </table>
         </div>`;
     return divHTML;
 }
 
-function getRowTemplate(borrower, loanNumber) {
+function getRowTemplate(borrower, loanNumber = 1) {
     const isSpouse = borrower === 'spouse';
-    const disabled = isSpouse && window.getComputedStyle(document.getElementById("spouseBlock")).getPropertyValue('display') === 'none';
+
     const trHTML = 
         `<tr id="${borrower}_loan${loanNumber}" aria-disabled="false">
             <td class="row-label">
@@ -556,18 +522,18 @@ function getRowTemplate(borrower, loanNumber) {
                     <input id="${borrower}_loan${loanNumber}_principal"
                         name="${borrower}_loan${loanNumber}_principal"
                         type="text"
-                        data-storage="localStorage" 
-                        data-type="number" 
+                        data-storage="localStorage"
+                        data-type="number"
                         ${(isSpouse) ? ' data-tag="spouseField"' : ''}
                         autocomplete="off"
                         aria-label="Your${(borrower === 'spouse') ? ' spouse\'s ' : ' '}loan ${loanNumber} principal balance"
-                        step="0.01" 
-                        min="0.01" 
-                        max="999999.99" 
-                        required 
-                        ${(disabled) ? 'disabled' : ''}>
+                        step="0.01"
+                        min="0.01"
+                        max="999999.99"
+                        required
+                        ${(isSpouse) ? 'disabled' : ''}>
                     <span class="error-message"></span>
-                    <button type="button" class="spinner-btn spinner-up"   aria-label="Increase loan ${loanNumber} principal amount" tabindex="-1"></button>
+                    <button type="button" class="spinner-btn spinner-up" aria-label="Increase loan ${loanNumber} principal amount" tabindex="-1"></button>
                     <button type="button" class="spinner-btn spinner-down" aria-label="Decrease loan ${loanNumber} principal amount" tabindex="-1"></button>
                 </div>
             </td>
@@ -580,13 +546,13 @@ function getRowTemplate(borrower, loanNumber) {
                         data-storage="localStorage" data-type="number" ${(isSpouse) ? ' data-tag="spouseField"' : ''}
                         autocomplete="off"
                         aria-label="Your${(borrower === 'spouse') ? ' spouse\'s ' : ' '}loan ${loanNumber} accrued interest"
-                        step="0.01" 
-                        min="0" 
-                        max="999999.99" 
-                        required 
-                        ${(disabled) ? 'disabled' : ''}>
+                        step="0.01"
+                        min="0"
+                        max="999999.99"
+                        required
+                        ${(isSpouse) ? 'disabled' : ''}>
                     <span class="error-message"></span>
-                    <button type="button" class="spinner-btn spinner-up"   aria-label="Increase loan ${loanNumber} accrued interest" tabindex="-1"></button>
+                    <button type="button" class="spinner-btn spinner-up" aria-label="Increase loan ${loanNumber} accrued interest" tabindex="-1"></button>
                     <button type="button" class="spinner-btn spinner-down" aria-label="Decrease loan ${loanNumber} accrued interest" tabindex="-1"></button>
                 </div>
             </td>
@@ -599,13 +565,13 @@ function getRowTemplate(borrower, loanNumber) {
                         data-storage="localStorage" data-type="number" ${(isSpouse) ? ' data-tag="spouseField" ' : ' '}data-field="${borrower}LoanRate"
                         autocomplete="off"
                         aria-label="Your${(borrower === 'spouse') ? ' spouse\'s ' : ' '}loan ${loanNumber} interest rate"
-                        step="0.01" 
-                        min="0" 
-                        max="99.99" 
-                        required 
-                        ${(disabled) ? 'disabled' : ''}>
+                        step="0.01"
+                        min="0"
+                        max="99.99"
+                        required
+                        ${(isSpouse) ? 'disabled' : ''}>
                     <span class="error-message"></span>
-                    <button type="button" class="spinner-btn spinner-up"   aria-label="Increase loan ${loanNumber} interest rate" tabindex="-1"></button>
+                    <button type="button" class="spinner-btn spinner-up" aria-label="Increase loan ${loanNumber} interest rate" tabindex="-1"></button>
                     <button type="button" class="spinner-btn spinner-down" aria-label="Decrease loan ${loanNumber} interest rate" tabindex="-1"></button>
                 </div>
             </td>
@@ -639,13 +605,13 @@ function getToolTipFromTemplate(template, id) {
             <svg class="help-icon" focusable="false" tabIndex="-1">
                 <use href="#help-hover"></use>
             </svg>
-            <div id="${tooltipID}" class="tooltip" role="tooltip" aria-hidden="true" tabIndex="-1"><!-- beautify ignore:start -->${template.text}<!-- beautify ignore:end -->  
+            <div id="${tooltipID}" class="tooltip" role="tooltip" aria-hidden="true" tabIndex="-1"><!-- beautify ignore:start -->${template.text}<!-- beautify ignore:end -->
             </div>
         </span>`;
     return spanHTML;
 }
 
-function getDataAttributesFromTemplate(template) {
+function getDataAttributesFromTemplate(template, additionalAttributes = null) {
     let output;
     const keys = Object.keys(template);
     for (let i = 0; i < keys.length; i++) {
@@ -653,15 +619,22 @@ function getDataAttributesFromTemplate(template) {
         (!output) ? output = attribute : output += attribute;
         if (i !== keys.length - 1) output += ' ';
     }
+    output = (additionalAttributes) ? output + additionalAttributes : output;
     return output;
 }
 
+/* *************************************************************************************************
+************************                  SECTION TEMPLATES                 ************************
+************************************************************************************************* */
+
 function buildSection(template) {
-    const validBorrower = template.borrower === 'self' || template.borrower === 'spouse';
+    const header = template.borrower || 'family';
+    const borrower = template.borrower;
     const sectionHTML = `
-        <h2 id="${template.borrower}-heading" class="field-header">${template.borrower.toUpperCase()}</h2>
+        <h2 id="${header}-heading" class="field-header">${header.toUpperCase()}</h2>
         
-        ${buildRows(template)}${(template.borrower && validBorrower) ? getLoansFromTemplate(template.borrower) : ''}
+        ${buildRows(template)}
+        ${(borrower) ? getLoansFromTemplate(template.borrower) : ''}
     `;
 
     const formattedHTML = html_beautify(sectionHTML, {
@@ -683,17 +656,21 @@ function buildRows(template) {
         if (keys[i] === 'borrower') continue;
         const row = buildRowFromTemplate(template[keys[i]], borrower);
         (!output) ? output = row : output += row;
-        if (i !== keys.length - 2) output += `
-        `;
+        if (i !== keys.length - 2) output += `\n`;
     }
     return output;
 }
 
 function buildRowFromTemplate(template, borrower) {
+    const comment = template.comment;
+    const id = (template.id) ? 'id="' + template.id + '"' : null;
+    const classes = template.class;
+    const fields = template.fields;
+
     const rowHTML = 
-        `${(template.comment) ? template.comment : ''}
-        <div ${(template.id) ? 'id="' + template.id + '" ' : ''}class="${template.class}">
-            ${buildFieldsFromTemplate(template.fields, borrower)}
+        `${(comment) ? comment : ''}
+        <div ${(id) ? id : ''} class="${classes}">
+            ${buildFieldsFromTemplate(fields, borrower)}
         </div>`;
     return rowHTML;
 }
@@ -750,7 +727,6 @@ const borrowerTemplate = (borrower) => ({
 })
 
 const familyTemplate = {
-    'borrower': 'family',
     '1': {
         id: 'familyInfo',
         class: 'row-3',

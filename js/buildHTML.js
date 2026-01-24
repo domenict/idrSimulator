@@ -21,7 +21,8 @@ function getNumberInputFromTemplate(template, borrower = null) {
     const divClasses = `input-wrapper${(type) ? ' ' + type : ''}`;
     const unitSpan = (type) ? (type === 'dollar') ? `<span class="unit">$</span>` : `<span class="unit">%</span>` : null;
     
-    const additionalAttributes = `${(borrower === 'spouse') ? ' data-tag="spouseField"' : ''}`;
+    const loanField = template.loanField;
+    const additionalAttributes = `${(borrower) ? (loanField) ? 'data-tag="' + borrower + 'LoanField"' : 'data-tag="' + borrower + 'Field"' : ''}`;
     const addData = (additionalAttributes !== '') ? additionalAttributes : null;
 
     const prefix = (borrower === 'spouse') ? 'Your spouse\'s ' : 'Your ';
@@ -73,7 +74,8 @@ const monthlyOverpaymentTemplate = {
     'tooltip': {
         'ariaLabel': 'Help about monthly overpayment',
         'text': 'An excess payment in addition to the monthly minimum determined by your selected plan(s) and applied to all borrowers. The default is set for minimum monthly payments.'
-    }
+    },
+    'loanField': true
 }
 
 const agiTemplate = {
@@ -93,7 +95,8 @@ const agiTemplate = {
     'tooltip': {
         'ariaLabel': 'Help about annual adjusted gross income entry',
         'text': 'AGI (Adjusted Gross Income) is the total gross salary minus applicable deductions which may include 401(k) and HSA/FSA contributions, interest premiums or student loan interest payments (up to $2500). The exact amount can be found on line 11 of your most recent tax return (Form 1040).'
-    }
+    },
+    'loanField': false
 }
 
 const annualGrowthTemplate = {
@@ -113,7 +116,8 @@ const annualGrowthTemplate = {
     'tooltip': {
         'ariaLabel': 'Help about annual growth features',
         'text': 'For a conservative estimate, the median U.S. annual income growth has been 3.8% over the last 30 years.'
-    }
+    },
+    'loanField': false
 }
 
 const qualifiedPaymentsTemplate = {
@@ -133,7 +137,8 @@ const qualifiedPaymentsTemplate = {
     'tooltip': {
         'ariaLabel': 'Help about determining current number of qualified payments',
         'text': 'Number of qualifying monthly payments made towards your public student loans. For an exact number, log into StudentAid.gov, search for \'NSLDS Payment Counter Summary\' and paste the link found. Input the difference of the plan maximum and the repayment counter into this field.'
-    }
+    },
+    'loanField': true
 }
 
 const standardCapTemplate = {
@@ -153,7 +158,8 @@ const standardCapTemplate = {
     'tooltip': {
         'ariaLabel': 'Help about understanding permanent standard',
         'text': 'The 10-year standard payment amount that is calculated when enrolled in IBR. Minimum payments cannot exceed this amount while on the plan. If new to IDR, keep this value at the default to calculate it for you.'
-    }
+    },
+    'loanField': true
 }
 const familySizeTemplate = {
     'input': 'number',
@@ -171,7 +177,8 @@ const familySizeTemplate = {
     'tooltip': {
         'ariaLabel': 'Help on how to determine family size',
         'text': 'Family size includes you, your spouse (if applicable), as well as any relative receiving greater than half of their financial support from your household. If married filing separately, it is assumed the borrowers are living together and the borrower with the higher AGI claims all dependents.'
-    }
+    },
+    'loanField': false
 }
 
 const dependentTemplate = {
@@ -190,7 +197,8 @@ const dependentTemplate = {
     'tooltip': {
         'ariaLabel': 'Help on how to determine eligible dependents',
         'text': 'Child dependents are individuals 17 years of age or less.'
-    }
+    },
+    'loanField': true
 }
 
 /* -------------------------------------------------
@@ -204,7 +212,8 @@ function getSelectFromTemplate(template, borrower) {
     const data = template.data;
     const disabled = borrower === 'spouse';
 
-    const additionalAttributes = `${(borrower === 'spouse') ? ' data-tag="spouseField"' : ''}`;
+    const loanField = template.loanField;
+    const additionalAttributes = `${(borrower) ? (loanField) ? 'data-tag="' + borrower + 'LoanField"' : 'data-tag="' + borrower + 'Field"' : ''}`;
     const addData = (additionalAttributes !== '') ? additionalAttributes : null;
 
     const divHTML = 
@@ -266,7 +275,8 @@ const fixedOverpaymentTemplate = {
     'options': {
         'yes': 'Fixed Overpayments',
         'no': 'Scale with Income Growth'
-    }
+    },
+    'loanField': true
 }
 
 const repaymentPlanTemplate = {
@@ -281,7 +291,8 @@ const repaymentPlanTemplate = {
         'rap': 'RAP',
         'old': 'Old IBR',
         'new': 'New IBR'
-    }
+    },
+    'loanField': true
 }
 
 const interestReductionTemplate = {
@@ -298,7 +309,8 @@ const interestReductionTemplate = {
     'options': {
         'no': 'Not applicable',
         'yes': 'Enrolled in autopay'
-    }
+    },
+    'loanField': true
 }
 
 const pslfTemplate = {
@@ -312,7 +324,8 @@ const pslfTemplate = {
     'options': {
         'no': 'Not Eligible',
         'yes': 'Eligible'
-    }
+    },
+    'loanField': true
 }
 
 const residencyTemplate = {
@@ -326,7 +339,8 @@ const residencyTemplate = {
         'us': 'Contiguous US',
         'ak': 'Alaska',
         'hi': 'Hawaii'
-    }
+    },
+    'loanField': false
 }
 
 
@@ -334,7 +348,7 @@ const residencyTemplate = {
     RADIO INPUTS
 ------------------------------------------------- */
 function getRadioFromTemplate(template) {
-    const divClasses = `radio-field${(template.divClass) ? ' ' + template.divClass : ''}`;
+    const divClasses = `radio-field ${(template.divClass)}`;
     const legendID = template.legendId;
     const label = template.legendLabel;
     const radios = template.radios;
@@ -355,9 +369,6 @@ function getRadioOptionsFromTemplate(template, radios) {
     const data = template.data;
     const spouseDiv = template.spouseDiv;
 
-    const additionalAttributes = `${(spouseDiv) ? ' data-tag="spouseField"' : ''}`;
-    const addData = (additionalAttributes !== '') ? additionalAttributes : null;
-
     const keys = Object.keys(radios);
     for (let i = 0; i < keys.length; i++) {
         const id = keys[i];
@@ -372,7 +383,7 @@ function getRadioOptionsFromTemplate(template, radios) {
                     id="${id}"
                     name="${name}"
                     value="${value}"
-                    ${getDataAttributesFromTemplate(data, addData)}
+                    ${getDataAttributesFromTemplate(data)}
                     ${(checked) ? ' checked' : ''}
                     ${(spouseDiv) ? ' disabled' : ''}>
                 <svg class="radio-circle" viewBox="0 0 24 24" width="20" height="20" aria-hidden="true" focusable="false" tabindex="-1">
@@ -416,7 +427,8 @@ const filingTemplate = {
     'divClass': 'spouseDiv',
     'spouseDiv': true,
     'data': {
-        'data-storage': 'localStorage'
+        'data-storage': 'localStorage',
+        'data-tag': 'spouseField'
     },
     'legendId': 'filing-legend',
     'legendLabel': 'How are you filing taxes?',
@@ -441,6 +453,7 @@ const spouseLoansTemplate = {
     'spouseDiv': true,
     'data': {
         'data-storage': 'localStorage',
+        'data-tag': 'spouseField'
     },
     'legendId': 'spouseLoans-legend',
     'legendLabel': 'Any spouse loans?',
@@ -461,13 +474,14 @@ const spouseLoansTemplate = {
 const poolOverpaymentsTemplate = {
     'input': 'radio',
     'name': 'poolOverpayments',
-    'divClass': 'spouseDiv spouseLoanDiv',
+    'divClass': 'spouseLoanDiv',
     'spouseDiv': true,
     'data': {
-        'data-storage': 'localStorage'
+        'data-storage': 'localStorage',
+        'data-tag': 'spouseLoanField'
     },
     'legendId': 'poolOverpayments-legend',
-    'legendLabel': 'Pool overpayments?',
+    'legendLabel': 'Combine overpayments?',
     'radios': {
         'poolOverpayments_true': {
             'value': 'yes',
@@ -489,7 +503,7 @@ const poolOverpaymentsTemplate = {
 function getLoansFromTemplate(borrower) {
     const divHTML = 
         `<!-- ==================== ${borrower.toUpperCase()} LOANS ==================== -->
-        <div class="loan-table-wrapper">
+        <div class="loan-table-wrapper ${borrower + 'LoanTable'}">
             <table id="${borrower}Loans" class="loan-table" aria-describedby="live-announcements">
                 <thead>
                     <tr>
@@ -510,6 +524,8 @@ function getLoansFromTemplate(borrower) {
 
 function getRowTemplate(borrower, loanNumber = 1) {
     const isSpouse = borrower === 'spouse';
+    const disabled = isSpouse && window.getComputedStyle(document.getElementById("spouseSection")).getPropertyValue('display') === 'none';
+    const labelPrefix = `Your${(borrower === 'spouse') ? ' spouse\'s ' : ' '}loan ${loanNumber}`;
 
     const trHTML = 
         `<tr id="${borrower}_loan${loanNumber}" aria-disabled="false">
@@ -524,14 +540,14 @@ function getRowTemplate(borrower, loanNumber = 1) {
                         type="text"
                         data-storage="localStorage"
                         data-type="number"
-                        ${(isSpouse) ? ' data-tag="spouseField"' : ''}
+                        data-tag="${borrower}LoanField"
                         autocomplete="off"
-                        aria-label="Your${(borrower === 'spouse') ? ' spouse\'s ' : ' '}loan ${loanNumber} principal balance"
+                        aria-label="${labelPrefix} principal balance"
                         step="0.01"
                         min="0.01"
                         max="999999.99"
                         required
-                        ${(isSpouse) ? 'disabled' : ''}>
+                        ${(disabled) ? 'disabled' : ''}>
                     <span class="error-message"></span>
                     <button type="button" class="spinner-btn spinner-up" aria-label="Increase loan ${loanNumber} principal amount" tabindex="-1"></button>
                     <button type="button" class="spinner-btn spinner-down" aria-label="Decrease loan ${loanNumber} principal amount" tabindex="-1"></button>
@@ -543,14 +559,16 @@ function getRowTemplate(borrower, loanNumber = 1) {
                     <input id="${borrower}_loan${loanNumber}_interest"
                         name="${borrower}_loan${loanNumber}_interest"
                         type="text"
-                        data-storage="localStorage" data-type="number" ${(isSpouse) ? ' data-tag="spouseField"' : ''}
+                        data-storage="localStorage" 
+                        data-type="number"
+                        data-tag="${borrower}LoanField"
                         autocomplete="off"
-                        aria-label="Your${(borrower === 'spouse') ? ' spouse\'s ' : ' '}loan ${loanNumber} accrued interest"
+                        aria-label="${labelPrefix} accrued interest"
                         step="0.01"
                         min="0"
                         max="999999.99"
                         required
-                        ${(isSpouse) ? 'disabled' : ''}>
+                        ${(disabled) ? 'disabled' : ''}>
                     <span class="error-message"></span>
                     <button type="button" class="spinner-btn spinner-up" aria-label="Increase loan ${loanNumber} accrued interest" tabindex="-1"></button>
                     <button type="button" class="spinner-btn spinner-down" aria-label="Decrease loan ${loanNumber} accrued interest" tabindex="-1"></button>
@@ -562,14 +580,16 @@ function getRowTemplate(borrower, loanNumber = 1) {
                     <input id="${borrower}_loan${loanNumber}_rate"
                         name="${borrower}_loan${loanNumber}_rate"
                         type="text"
-                        data-storage="localStorage" data-type="number" ${(isSpouse) ? ' data-tag="spouseField" ' : ' '}data-field="${borrower}LoanRate"
+                        data-storage="localStorage" 
+                        data-type="number"
+                        data-tag="${borrower}LoanField"
                         autocomplete="off"
-                        aria-label="Your${(borrower === 'spouse') ? ' spouse\'s ' : ' '}loan ${loanNumber} interest rate"
+                        aria-label="${labelPrefix} interest rate"
                         step="0.01"
                         min="0"
                         max="99.99"
                         required
-                        ${(isSpouse) ? 'disabled' : ''}>
+                        ${(disabled) ? 'disabled' : ''}>
                     <span class="error-message"></span>
                     <button type="button" class="spinner-btn spinner-up" aria-label="Increase loan ${loanNumber} interest rate" tabindex="-1"></button>
                     <button type="button" class="spinner-btn spinner-down" aria-label="Decrease loan ${loanNumber} interest rate" tabindex="-1"></button>
@@ -706,22 +726,22 @@ const borrowerTemplate = (borrower) => ({
     'borrower': borrower,
     '1': {
         comment: `<!-- ==================== ${borrower.toUpperCase()} INCOME ==================== -->`,
-        class: 'row-2',
+        class: `row-2 ${borrower +'Row'}`,
         fields: { agiTemplate, annualGrowthTemplate }
     },
     '2': {
         comment: `<!-- ==================== ${borrower.toUpperCase()} PAYMENT ==================== -->`,
-        class: 'row-2',
+        class: `row-2 ${borrower +'LoanRow'}`,
         fields: { monthlyOverpaymentTemplate, fixedOverpaymentTemplate }
     },
     '3': {
         comment: `<!-- ==================== ${borrower.toUpperCase()} PLAN ==================== -->`,
-        class: 'row-3',
+        class: `row-3 ${borrower +'LoanRow'}`,
         fields: { repaymentPlanTemplate, qualifiedPaymentsTemplate, standardCapTemplate }
     },
     '4': {
         comment: `<!-- ==================== ${borrower.toUpperCase()} OPTIONS ==================== -->`,
-        class: 'row-2',
+        class: `row-2 ${borrower +'LoanRow'}`,
         fields: { pslfTemplate, interestReductionTemplate }
     }
 })
@@ -739,7 +759,7 @@ const familyTemplate = {
     },
     '3': {
         id: 'radios-bottom',
-        class: 'row-2 radios spouseDiv',
+        class: 'row-2 radios spouseRow',
         fields: { spouseLoansTemplate, poolOverpaymentsTemplate }
     }
 }

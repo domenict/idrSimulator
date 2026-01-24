@@ -625,8 +625,19 @@ section {
     line-height: calc(var(--line-height-base) + 0.1);
 }
 
-.spouseDiv, #spouseBlock { display: none; }
 [aria-labelledby="family-heading"] { padding-bottom: var(--space-5); }
+
+#spouseSection.hideAllSpouse,
+.hideAllSpouse .spouseRow, 
+.hideAllSpouse .spouseDiv,
+.hideAllSpouse .spouseLoanRow,
+.hideAllSpouse .spouseLoanDiv,
+.hideAllSpouse .spouseLoanTable,
+.hideSpouseLoanOnly .spouseLoanRow,
+.hideSpouseLoanOnly .spouseLoanDiv,
+.hideSpouseLoanOnly .spouseLoanTable { 
+    display: none; 
+}
 
 button[type="submit"] {
     padding: calc(var(--space-3) * 0.8);

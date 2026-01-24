@@ -96,12 +96,9 @@ function delayTransition(fromLoad) {
 
 // Element attributes must be set to correct state after restoring/deleting session
 function updateToggleEvents() {
-    const isMarried = document.querySelector('input[name="married"]:checked')?.value === 'yes';
-    toggleMarried(isMarried);
+    toggleSpouseFields();
     updateFamilySizeMin();
-
-    const repaymentPlans = Array.from(document.querySelectorAll('[data-field="repaymentPlan"]'));
-    repaymentPlans.forEach(element => repaymentPlanToggle(element));
+    Array.from(document.querySelectorAll('[data-field="repaymentPlan"]')).forEach(element => repaymentPlanToggle(element));
 
     for (const key in cache) {
         if (key.includes('.disabled')) {
@@ -128,10 +125,14 @@ function addFormListeners() {
     document.getElementById("calcForm").addEventListener("submit", submitForm);
     document.getElementById('calcForm').addEventListener('keydown', moveToNext);
 
-    // Toggles married radios
+    // Toggles spouse divs based
     const marriedRadios = document.getElementsByName('married');
     Array.from(marriedRadios).forEach(radio => {
         radio.addEventListener('change', toggleMarriedListenerHandler);
+    });
+    const spouseHasLoans = document.getElementsByName('spouseHasLoans');
+    Array.from(spouseHasLoans).forEach(radio => {
+        radio.addEventListener('change', toggleSpouseHasLoansListenerHandler);
     });
 
     // Number input handling
@@ -885,7 +886,7 @@ async function clearSessions() {
 
         // Reset toggle events and scroll before returning
         updateToggleEvents();
-        window.scrollTo(0, 0);
+        requestAnimationFrame(() => window.scrollTo(0, 0));
         return true;
     } catch (err) {
         console.log(err.message);
@@ -1079,54 +1080,79 @@ function updateFamilySizeMin() {
     return newMin;
 }
 
-// Toggles spouse field style/classes based on married radio and toggle type
-function toggleMarriedListenerHandler() {
-    const isMarried = document.querySelector('input[name="married"]:checked')?.value === 'yes';
-    toggleMarried(isMarried);
+function toggleMarriedListenerHandler(e) {
+    toggleSpouseFields(e.target);
     updateFamilySizeMin();
 }
-function toggleMarried(isMarried) {
-    const spouseBlock = document.getElementById("spouseBlock");
-    const spouseDivs = document.getElementsByClassName("spouseDiv");
-    const spouseFields = document.querySelectorAll('[data-tag="spouseField"]');
+function toggleSpouseHasLoansListenerHandler(e) {
+    toggleSpouseFields(e.target);
+}
+function toggleSpouseFields(triggerElement) {
+    const trigger = (triggerElement) ? triggerElement.name : null;
+    const isMarried = document.querySelector('input[name="married"]:checked')?.value === 'yes';
+    const spouseHasLoans = document.querySelector('input[name="spouseHasLoans"]:checked')?.value === 'yes';
+
+    const spouseSection = document.getElementById("spouseSection");
+    const familySection = document.getElementById("familySection");
     const radiosTop = document.getElementById('radios-top');
+    const radiosBottom = document.getElementById('radios-bottom');
+    const spouseFields = document.querySelectorAll('[data-tag="spouseField"]');
+    const spouseLoanFields = document.querySelectorAll('[data-tag="spouseLoanField"]');
+    
+    const oldPageHeight = document.documentElement.scrollHeight;
+    const scrollY = window.scrollY;
+    requestAnimationFrame(() => {
+        if (!isMarried) {
+            spouseSection.className = 'hideAllSpouse';
+            familySection.className = 'hideAllSpouse';
+            radiosTop.classList.replace('row-2', 'row-1');
+            radiosBottom.classList.replace('row-2', 'row-1');
 
-    if (isMarried) {
-        // Adjust spacer first before any re-paints
-        const removeFromOffset = spouseBlock.offsetHeight;
-        removeFromSpacer(removeFromOffset);
-        spouseBlock.style.display = 'grid';
+            const allFields = [...spouseFields, ...spouseLoanFields];
+            allFields.forEach(field => { field.disabled = true; });
+        } else if (isMarried && !spouseHasLoans) {
+            spouseSection.className = 'hideSpouseLoanOnly';
+            familySection.className = 'hideSpouseLoanOnly';
+            radiosTop.classList.replace('row-1', 'row-2');
+            radiosBottom.classList.replace('row-2', 'row-1');
 
-        // Display spouse only containers and announce
-        radiosTop.classList.replace('row-1','row-2');
-        Array.from(spouseDivs).forEach(element => { 
-            const targets = ['row-1', 'row-2', 'row-3'];
-            const hasMatch = targets.some(cls => element.classList.contains(cls));
-            if (hasMatch) {
-                element.style.display = 'grid';
-            } else {
-                element.style.display = 'flex'; 
-            }
-        });
-        Array.from(spouseFields).forEach(element => { 
-            const wrapper = element.closest('.input-wrapper');
-            const wrapperDisabled = (wrapper) ? wrapper.classList.contains('inputDisabled') : false;
-            if (!wrapperDisabled) element.disabled = false;  
-        });
-        announce('Spouse fields have been added.');
-    } else {
-        // Adjust spacer first before any re-paints
-        const offset = parseInt(window.getComputedStyle(document.getElementById("calcForm")).getPropertyValue('gap')) || 0;
-        const addToOffset = spouseBlock.offsetHeight;
-        addToSpacer(addToOffset, offset); // offset 1rem due to calcForm gap
-        spouseBlock.style.display = 'none';
+            Array.from(spouseFields).forEach(field => {
+                const wrapper = field.closest('.input-wrapper');
+                const wrapperDisabled = (wrapper) ? wrapper.classList.contains('inputDisabled') : false;
+                if (!wrapperDisabled) field.disabled = false;  
+            });
+            Array.from(spouseLoanFields).forEach(field => { field.disabled = true; });
+        } else {
+            spouseSection.className = '';
+            familySection.className = '';
+            radiosTop.classList.replace('row-1', 'row-2');
+            radiosBottom.classList.replace('row-1', 'row-2');
 
-        // Hide spouse only containers and announce
-        radiosTop.classList.replace('row-2', 'row-1');
-        Array.from(spouseDivs).forEach(element => { element.style.display = 'none'; });
-        Array.from(spouseFields).forEach(element => { element.disabled = true; });
-        announce('Spouse fields have been removed.');
-    }
+            const allFields = [...spouseFields, ...spouseLoanFields];
+            allFields.forEach(field => {
+                const wrapper = field.closest('.input-wrapper');
+                const wrapperDisabled = (wrapper) ? wrapper.classList.contains('inputDisabled') : false;
+                if (!wrapperDisabled) field.disabled = false;  
+            });
+        }
+
+        if (trigger === 'married') {
+            let message = `Spouse sections have been ${(isMarried) ? 'added.' : 'removed.'}`;
+            if (isMarried && !spouseHasLoans) message += ` Spouse loan fields remain hidden.`;
+            announce(message);
+        } 
+        if (trigger === 'spouseHasLoans') {
+            let message = `Spouse loan fields have been ${(spouseHasLoans) ? 'added.' : 'removed.'}`;
+            announce(message);
+        }
+
+        const newPageHeight = document.documentElement.scrollHeight;
+        if (newPageHeight > oldPageHeight) {
+            removeFromSpacer(newPageHeight - oldPageHeight, scrollY)
+        } else {
+            addToSpacer(oldPageHeight - newPageHeight, scrollY);
+        }
+    });
 }
 
 /* *************************************************************************************************
@@ -1817,7 +1843,7 @@ function deleteRow(rowToDelete) {
     // Delete element, its listeners and its cache; update spacer
     removeLoanInputListeners(rowToDelete);
     const rowToDeleteHeight = rowToDelete.offsetHeight;
-    addToSpacer(rowToDeleteHeight, 0);  //no offset from parent
+    addToSpacer(rowToDeleteHeight);
     rowToDelete.remove();
     Object.keys(cache).forEach(key => { if (key.includes(rowToDelete.id)) delete cache[key]; });
 
@@ -1891,16 +1917,16 @@ function renameElements(container, oldIndex, newIndex) {
 ************************************************************************************************* */
 
 // Creates spacer to maintain scrollY when removing or hiding elements
-function addToSpacer(divHeight, offset) {
+function addToSpacer(divHeight, storedScrollY = null) {
     const spacer = document.getElementById("spacer");
-    const scrollY = window.scrollY;
+    const scrollY = (storedScrollY) ? storedScrollY : window.scrollY;
     const docHeight = document.documentElement.scrollHeight;
 
     const nearBottom = scrollY + window.innerHeight >= docHeight - divHeight - 1; //prevents subpixels
     const hasScrollbar = docHeight > window.innerHeight;
     if (nearBottom && hasScrollbar) {
         if (spacer.offsetHeight === 0) window.addEventListener("scroll", checkSpacer, {passive:true});
-        spacer.style.height = (parseInt(spacer.style.height || '0') + divHeight) + (offset || 0) + "px";
+        spacer.style.height = (parseInt(spacer.style.height || '0') + divHeight) + "px";
         window.scrollTo(0, scrollY);
         checkSpacer();
     }

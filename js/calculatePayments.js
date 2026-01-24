@@ -112,6 +112,7 @@ function inputValidation(data, basicInfo, loans) {
         ["spouse_interestReduction", "boolean", ["no", "yes"], "marriedDependent"],
         ["spouse_standardCap", "number", "float", 0, 9999999999999.99, "marriedDependent"]
     ];
+
     // Other maps in validation
     const loanInputMap = [
         ["principalID-placeholder", 0.01, 999999.99], 

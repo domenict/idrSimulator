@@ -73,7 +73,7 @@ const monthlyOverpaymentTemplate = {
     'max': '999999999.99',
     'tooltip': {
         'ariaLabel': 'Help about monthly overpayment',
-        'text': 'An excess payment in addition to the monthly minimum determined by your selected plan(s) and applied to all borrowers. The default is set for minimum monthly payments.'
+        'text': 'A payment in addition to the monthly minimum as determined by the borrower\'s plan. The default is set for minimum monthly payments.'
     },
     'loanField': true
 }
@@ -136,7 +136,7 @@ const qualifiedPaymentsTemplate = {
     'max': '360',
     'tooltip': {
         'ariaLabel': 'Help about determining current number of qualified payments',
-        'text': 'Number of qualifying monthly payments made towards your public student loans. For an exact number, log into StudentAid.gov, search for \'NSLDS Payment Counter Summary\' and paste the link found. Input the difference of the plan maximum and the repayment counter into this field.'
+        'text': 'Number of qualifying monthly payments made towards your federal student loans. To determine your remaining payments, log into StudentAid.gov, search for \'NSLDS Payment Counter Summary\', paste the link found, and input the difference between your plan maximum and your remaining payments into this field.'
     },
     'loanField': true
 }
@@ -157,7 +157,7 @@ const standardCapTemplate = {
     'max': '999999999.99',
     'tooltip': {
         'ariaLabel': 'Help about understanding permanent standard',
-        'text': 'The 10-year standard payment amount that is calculated when enrolled in IBR. Minimum payments cannot exceed this amount while on the plan. If new to IDR, keep this value at the default to calculate it for you.'
+        'text': 'The 10-year standard payment amount that is calculated when first enrolling into IBR. Minimum payments cannot exceed this amount while on the plan. If left at the default, this will be calculated for you.'
     },
     'loanField': true
 }
@@ -196,7 +196,7 @@ const dependentTemplate = {
     'max': '97',
     'tooltip': {
         'ariaLabel': 'Help on how to determine eligible dependents',
-        'text': 'Child dependents are individuals 17 years of age or less.'
+        'text': 'Dependents 17 years of age or less.'
     },
     'loanField': true
 }
@@ -270,7 +270,7 @@ const fixedOverpaymentTemplate = {
     },
     'tooltip': {
         'ariaLabel': 'Help about overpayment scaling',
-        'text': 'For scaling the overpayment amount if income is expected to grow over time. The minimum overpayment will equal the \'Monthly Overpayment\' field and will scale proportionally to the estimated total income of the household.'
+        'text': 'For scaling the overpayment amount proportionally to income growth. This setting carries over to the other borrower if all loans are paid in full and combining overpayments is selected.'
     },
     'options': {
         'yes': 'Fixed Overpayments',
@@ -304,7 +304,7 @@ const interestReductionTemplate = {
     },
     'tooltip': {
         'ariaLabel': 'Help about interest reduction features',
-        'text': 'A federally mandated 0.25% reduction for public loans rates if enrolled in auto-pay that will be applied during analysis.'
+        'text': 'A federally mandated 0.25% reduction for federal loans rates if enrolled in auto-pay will be applied if this is selected.'
     },
     'options': {
         'no': 'Not applicable',
@@ -606,7 +606,16 @@ function getRowTemplate(borrower, loanNumber = 1) {
                 <button id="${borrower}_loan${loanNumber}_delete" type="button" class="deleteLoan" aria-label="Remove loan ${loanNumber}" tabindex="0">−</button>
             </td>
         </tr>`;
-    return trHTML;
+
+    const formattedTR = html_beautify(trHTML, {
+        indent_size: 4,
+        indent_level: 7,
+        indent_char: ' ',
+        max_preserve_newlines: 1,
+        preserve_newlines: true,
+        wrap_line_length: 0
+    });
+    return formattedTR;
 }
 
 /* *************************************************************************************************
@@ -767,9 +776,9 @@ const familyTemplate = {
 //main
 async function buildHTML() {
     try {
-        const selfSection = document.querySelector('[aria-labelledby="self-heading"]');
-        const familySection = document.querySelector('[aria-labelledby="family-heading"]');
-        const spouseSection = document.querySelector('[aria-labelledby="spouse-heading"]');
+        const selfSection = document.getElementById('selfSection');
+        const familySection = document.getElementById('familySection');
+        const spouseSection = document.getElementById('spouseSection');
         
         selfSection.innerHTML = buildSection(borrowerTemplate('self'));
         familySection.innerHTML = buildSection(familyTemplate);

@@ -625,7 +625,8 @@ section {
     line-height: calc(var(--line-height-base) + 0.1);
 }
 
-[aria-labelledby="family-heading"] { padding-bottom: var(--space-5); }
+#familySection { padding-bottom: var(--space-5); }
+#spouseSection.hideSpouseLoanOnly { padding-bottom: var(--space-5); }
 
 #spouseSection.hideAllSpouse,
 .hideAllSpouse .spouseRow, 
@@ -959,7 +960,7 @@ input::placeholder { color:var(--color-font-pholder); }
 
 .radio-label:hover .radio-border,
 .radio-label input[type="radio"]:checked + .radio-circle .radio-border {
-    stroke-width: 3;
+    stroke-width: 2;
     stroke: var(--color-font-primary);
 }
 
@@ -1170,9 +1171,17 @@ tr:has(.toggleLoan[data-enabled="false"]) .row-label { opacity: var(--disabled-o
 
     .loan-table td input { flex: 1; }
 
-    .loan-table td:nth-child(2)::before { content: "Principal Amount: "; }
-    .loan-table td:nth-child(3)::before { content: "Accrued Interest: "; }
-    .loan-table td:nth-child(4)::before { content: "Interest Rate: "; }
+    .loan-table td:nth-child(2)::before { content: "Principal Amount: "; transition: opacity var(--trans-fast); }
+    .loan-table td:nth-child(3)::before { content: "Accrued Interest: "; transition: opacity var(--trans-fast); }
+    .loan-table td:nth-child(4)::before { content: "Interest Rate: "; transition: opacity var(--trans-fast); }
+
+    .loan-table:has(.toggleLoan[data-enabled="false"]) {
+        & td:nth-child(2)::before,
+        & td:nth-child(3)::before,
+        & td:nth-child(4)::before {
+            opacity: var(--disabled-opacity);
+        }
+    }
 
     .loan-table td:nth-child(2)::before,
     .loan-table td:nth-child(3)::before,

@@ -817,7 +817,7 @@ function submitForm(event) {
         results.textContent = output;
         announce(output);
 
-        smoothScroll("resultsContainer", 1000);
+        smoothScroll("resultsContainer");
         results.parentElement.focus();
     }
 }
@@ -1099,8 +1099,11 @@ function toggleSpouseFields(triggerElement) {
     const spouseFields = document.querySelectorAll('[data-tag="spouseField"]');
     const spouseLoanFields = document.querySelectorAll('[data-tag="spouseLoanField"]');
     
-    const oldPageHeight = document.documentElement.scrollHeight;
+    const form = document.getElementById('calcForm');
+    const oldFormHeight = form.offsetHeight;
+    const docHeight = document.documentElement.scrollHeight;
     const scrollY = window.scrollY;
+    const windowHeight = window.innerHeight;
     requestAnimationFrame(() => {
         if (!isMarried) {
             spouseSection.className = 'hideAllSpouse';
@@ -1135,7 +1138,9 @@ function toggleSpouseFields(triggerElement) {
                 if (!wrapperDisabled) field.disabled = false;  
             });
         }
+        if (!trigger) return; // Early return if not a triggered event (i.e. restoring a session)
 
+        // Announcement
         if (trigger === 'married') {
             let message = `Spouse sections have been ${(isMarried) ? 'added.' : 'removed.'}`;
             if (isMarried && !spouseHasLoans) message += ` Spouse loan fields remain hidden.`;
@@ -1146,11 +1151,18 @@ function toggleSpouseFields(triggerElement) {
             announce(message);
         }
 
-        const newPageHeight = document.documentElement.scrollHeight;
-        if (newPageHeight > oldPageHeight) {
-            removeFromSpacer(newPageHeight - oldPageHeight, scrollY)
+        // Adjust spacer/scroll
+        const newFormHeight = form.offsetHeight;
+        if (newFormHeight > oldFormHeight) {
+            removeFromSpacer(newFormHeight - oldFormHeight - 1);
+            const form = document.getElementById('calcForm')
+            const formBottomVisible = form.offsetTop + form.offsetHeight <= window.innerHeight + window.scrollY;
+            if (!formBottomVisible) {
+                const targetElement = (trigger === 'married') ? radiosTop.id : radiosBottom.id;
+                smoothScroll(targetElement);
+            }
         } else {
-            addToSpacer(oldPageHeight - newPageHeight, scrollY);
+            addToSpacer(oldFormHeight - newFormHeight + 1, docHeight, scrollY, windowHeight);
         }
     });
 }
@@ -1263,7 +1275,7 @@ function debounce(func, delay) {
 }
 
 // Scrolling to top of specific div
-function smoothScroll(targetId, duration) {
+function smoothScroll(targetId, duration = 1000) {
     const targetElement = document.getElementById(targetId);
     if (!targetElement) return;
   
@@ -1917,26 +1929,27 @@ function renameElements(container, oldIndex, newIndex) {
 ************************************************************************************************* */
 
 // Creates spacer to maintain scrollY when removing or hiding elements
-function addToSpacer(divHeight, storedScrollY = null) {
+function addToSpacer(amountToAdd, storedDocHeight = null, storedScrollY = null, storedWindowHeight = null) {
     const spacer = document.getElementById("spacer");
+    const docHeight = (storedDocHeight) ? storedDocHeight: document.documentElement.scrollHeight;
     const scrollY = (storedScrollY) ? storedScrollY : window.scrollY;
-    const docHeight = document.documentElement.scrollHeight;
+    const windowHeight = (storedWindowHeight) ? storedWindowHeight : window.innerHeight;
 
-    const nearBottom = scrollY + window.innerHeight >= docHeight - divHeight - 1; //prevents subpixels
-    const hasScrollbar = docHeight > window.innerHeight;
+    const nearBottom = scrollY + windowHeight >= docHeight - amountToAdd - 1; //prevents subpixels
+    const hasScrollbar = docHeight > windowHeight;
     if (nearBottom && hasScrollbar) {
         if (spacer.offsetHeight === 0) window.addEventListener("scroll", checkSpacer, {passive:true});
-        spacer.style.height = (parseInt(spacer.style.height || '0') + divHeight) + "px";
+        spacer.style.height = (parseInt(spacer.style.height || '0') + amountToAdd) + "px";
         window.scrollTo(0, scrollY);
         checkSpacer();
     }
 }
 
 // Remove from spacer when adding or showing elements
-function removeFromSpacer(divHeight) {
+function removeFromSpacer(amountToRemove) {
     const spacer = document.getElementById("spacer");
     if(parseInt(spacer.style.height)) {
-        spacer.style.height = Math.max(0, (parseInt(spacer.style.height || '0') - divHeight)) + "px";
+        spacer.style.height = Math.max(0, (parseInt(spacer.style.height || '0') - amountToRemove)) + "px";
         checkSpacer();
     }
 }

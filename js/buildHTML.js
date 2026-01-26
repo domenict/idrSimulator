@@ -176,7 +176,7 @@ const familySizeTemplate = {
     'max': '99',
     'tooltip': {
         'ariaLabel': 'Help on how to determine family size',
-        'text': 'Family size includes you, your spouse (if applicable), as well as any relative receiving greater than half of their financial support from your household. If married filing separately, it is assumed the borrowers are living together and the borrower with the higher AGI claims all dependents.'
+        'text': 'Family size includes you, your spouse (if applicable), as well as any relative receiving greater than half of their financial support from your household. If married filing separately and both borrowers have loans, it is assumed the borrowers are living together and the borrower with the higher AGI claims all dependents.'
     },
     'loanField': false
 }

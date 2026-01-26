@@ -54,7 +54,7 @@ function calculatePayments(data) {
     try {
         const inputValidated = inputValidation(sortedData, basicInfo, loans); //basicInfo & loans populated with user input
         if (!inputValidated) throw new Error('Input validation failure');
-    
+        
         //Function adds/modifies loans object with minimum payment of each loan
         const firstYearPlanEstimates = calculateMinimumPayments(basicInfo, loans);
 
@@ -65,7 +65,8 @@ function calculatePayments(data) {
         //      Immediate Bleed             - Prioritizes loan generating the most interest
         //      Snowball                    - Prioritizes loan with the lowest balance
         //      Highest Minimum Payment     - Prioritizes loan with the largest minimum payment
-        const repaymentOrders = getRepaymentOrders(basicInfo, loans);
+        const repaymentOrders = getRepaymentOrders(loans);
+
         const simulatedPayments = simulateRepayment(basicInfo, loans, repaymentOrders, firstYearPlanEstimates);
         console.log(`SIMULATED OUTPUT: ${new Date()}`);
         console.log(simulatedPayments);
@@ -85,32 +86,35 @@ function inputValidation(data, basicInfo, loans) {
     // If type === boolean -> [key, "boolean" as string, array where index 0 is false and index 1 is true]
     // If type === string -> [key, "string" as string, array of valid strings]
     // If type === number -> [key, "number" as string, specify float/integer as string, min, max]
-    // "marriedDependent" appended as last index if applicable
+    // "marriedDependent" or "spouseHasLoansDependent" appended as last index if applicable
     const marriedMap = [["married", "boolean", ["no","yes"]]];
+    const spouseHasLoansMap = [["spouseHasLoans", "boolean", ["no", "yes"], "marriedDependent"]];
     const primaryInputMap = [
         ["self_repaymentPlan", "string", ["old", "new", "rap"]],
-        ["spouse_repaymentPlan", "string", ["old", "new", "rap"], "marriedDependent"],
+        ["spouse_repaymentPlan", "string", ["old", "new", "rap"], "spouseHasLoansDependent"],
         ["self_pslfEligible", "boolean", ["no","yes"]],
-        ["spouse_pslfEligible", "boolean", ["no","yes"], "marriedDependent"],
+        ["spouse_pslfEligible", "boolean", ["no","yes"], "spouseHasLoansDependent"],
         ["dependents", "number", "integer", 0, 97]
     ];
     const secondaryInputMap = [
-        ["monthlyOverpayment", "number", "float", 0, 9999999999999.99],
-        ["fixedOverpayments", "boolean", ["no","yes"]],
-        ["self_agi", "number", "float", 0, 9999999999999.99],
+        ["self_agi", "number", "float", 0, 999999999.99],
         ["self_annualGrowth", "number", "float", 0, 99.99],
+        ["self_monthlyOverpayment", "number", "float", 0, 999999999.99],
+        ["self_fixedOverpayments", "boolean", ["no","yes"]],
         ["self_qualifiedPayments", "number", "integer", 0, 360],
         ["self_interestReduction", "boolean", ["no", "yes"]], 
-        ["self_standardCap", "number", "float", 0, 9999999999999.99],
+        ["self_standardCap", "number", "float", 0, 999999999.99],
         ["familySize", "number", "integer", 1, 99],
         ["residency", "string", ["us", "ak", "hi"]], 
         ["filingJointly", "boolean", ["no", "yes"], "marriedDependent"],
-        ["priority", "string", ["self", "spouse", "both"], "marriedDependent"],
-        ["spouse_agi", "number", "float", 0, 9999999999999.99, "marriedDependent"],
+        ["poolOverpayments", "boolean", ["no", "yes"], "spouseHasLoansDependent"],
+        ["spouse_agi", "number", "float", 0, 999999999.99, "marriedDependent"],
         ["spouse_annualGrowth", "number", "float", 0, 99.99, "marriedDependent"],
-        ["spouse_qualifiedPayments", "number", "integer", 0, 360, "marriedDependent"],
-        ["spouse_interestReduction", "boolean", ["no", "yes"], "marriedDependent"],
-        ["spouse_standardCap", "number", "float", 0, 9999999999999.99, "marriedDependent"]
+        ["spouse_monthlyOverpayment", "number", "float", 0, 999999999.99, "spouseHasLoansDependent"],
+        ["spouse_fixedOverpayments", "boolean", ["no","yes"], "spouseHasLoansDependent"],
+        ["spouse_qualifiedPayments", "number", "integer", 0, 360, "spouseHasLoansDependent"],
+        ["spouse_interestReduction", "boolean", ["no", "yes"], "spouseHasLoansDependent"],
+        ["spouse_standardCap", "number", "float", 0, 999999999.99, "spouseHasLoansDependent"]
     ];
 
     // Other maps in validation
@@ -122,13 +126,19 @@ function inputValidation(data, basicInfo, loans) {
     const planMap = ["old", 300, "new", 240, "rap", 360];
 
     /* -------------------- VALIDATION STARTS HERE -------------------- */
-    // married should always be first due to the plethora of dependencies
-    let married = null;
+    // married and spouseHasLoans first due to dependencies 
+    let married = false;
+    let spouseHasLoans = false;
     let pass = validateInputMap(marriedMap);
     if (!pass) return false;
     if (basicInfo.married) {
         married = true;
         basicInfo.spouse = {};
+    }
+    pass = validateInputMap(spouseHasLoansMap);
+    if (!pass) return false;
+    if (basicInfo.spouseHasLoans) {
+        spouseHasLoans = true;
         loans.spouse = {};
     }
 
@@ -158,13 +168,15 @@ function inputValidation(data, basicInfo, loans) {
     ------------------------------------------------- */
     function validateInputMap(inputMap) {
         for (let i = 0; i < inputMap.length; i++) {
-            let key = inputMap[i][0];
-            let value = data[key];
-            if (!married && inputMap[i][inputMap[i].length-1] === "marriedDependent") continue;
+            const key = inputMap[i][0];
+            const value = data[key];
+            const dependency = inputMap[i][inputMap[i].length-1];
+            if (!married && dependency === "marriedDependent") continue;
+            if (!spouseHasLoans && dependency === "spouseHasLoansDependent") continue;
             if (value === undefined) return false;
 
             let writeValue, values, booleanValue, numberType, parsedValue, min, max;
-            let type = inputMap[i][1];
+            const type = inputMap[i][1];
             switch(type) {
                 case "boolean":
                     values = inputMap[i][2];
@@ -203,7 +215,7 @@ function inputValidation(data, basicInfo, loans) {
 
             if (key.indexOf("self") !== -1) {
                 basicInfo.self[key.split("_")[1]] = writeValue;
-            } else if (key.indexOf("spouse") !== -1) {
+            } else if (key.indexOf("spouse_") !== -1) {
                 basicInfo.spouse[key.split("_")[1]] = writeValue;
             } else {
                 basicInfo[key] = writeValue;
@@ -263,6 +275,7 @@ function inputValidation(data, basicInfo, loans) {
             const borrower = splitKey[0];
             if (borrower !== "self" && borrower !== "spouse") return false;
             if (borrower === "spouse" && !married) return false;
+            if (borrower === "spouse" && !spouseHasLoans) return false;
             
             const expectedID = borrower + "_loan" + loanNumber;
             const interestID = expectedID + "_interest";
@@ -303,56 +316,50 @@ function inputValidation(data, basicInfo, loans) {
 /* -------------------------------------------------
     IDR CERTIFICATION
 ------------------------------------------------- */
-// Married Filing Jointly = Combined AGI prorated to share of the total debt, spouse always part of family size
-// Married Filing Separately = Individual responsibility, borrower with higher AGI claims dependents
+// Married Filing Jointly = Combined AGI prorated to share of the total debt
+// Married Filing Separately = Individual responsibility, both share family size input - if both are borrowers, borrower with higher AGI claims dependents
 function calculateMinimumPayments(basicInfo, loans, year = 0, firstYearPlanEstimates) {
     const saveToHistory = {};
-    const loanSums = { 'self': getLoanSum(loans, 'self') };
+    const isMarried = basicInfo.married;
+    const filingJointly = basicInfo.filingJointly;
 
-    if (basicInfo.married) {
-        loanSums['spouse'] = getLoanSum(loans, 'spouse');
-        const marriedLoanSum = loanSums.self + loanSums.spouse;
-        const greaterAGI = (basicInfo.self.agi > basicInfo.spouse.agi) ? 'self' : 'spouse';
-        
-        ['self', 'spouse'].forEach(borrower => {
-            const borrowerLoans = loans[borrower];
-            const AGI = (basicInfo.filingJointly) ? basicInfo.self.agi + basicInfo.spouse.agi : basicInfo[borrower].agi;
-            const portionOfPayment = (basicInfo.filingJointly) ? loanSums[borrower] / marriedLoanSum : 1;
-            const plan = basicInfo[borrower].repaymentPlan;
-            const familySize = basicInfo.familySize
-            const previousSTDPayment = (firstYearPlanEstimates !== undefined) ? firstYearPlanEstimates[borrower].std : null;
-            const standardCap = basicInfo[borrower].standardCap;
+    const borrowers = Object.keys(loans);
+    const householdAGI = borrowers.reduce((total, borrower) => total += basicInfo[borrower].agi, 0);
+    const greaterAGI = (isMarried) ? (basicInfo.self.agi >= basicInfo.spouse.agi) ? 'self' : 'spouse' : 'self';
+    const loanSums = borrowers.reduce((total, borrower) => {
+        total[borrower] = getBorrowerLoanSum(loans[borrower]);
+        return total;
+    }, {});
+    const householdLoanSum = Object.values(loanSums).reduce((total, borrowerSum) => total += borrowerSum, 0);
 
-            let povertyLine, dependents;
-            if (basicInfo.filingJointly) {
-                povertyLine = calculatePovertyGuidelines(familySize, basicInfo.residency, year);
-                dependents = basicInfo.dependents;
-            } else {
-                const isHigherEarner = (borrower === greaterAGI);
-                povertyLine = calculatePovertyGuidelines(familySize, basicInfo.residency, year);
-                dependents = (isHigherEarner) ? basicInfo.dependents : 0;
-            }
+    borrowers.forEach(borrower => {
+        const borrowerLoans = loans[borrower];
+        const borrowerPlan = basicInfo[borrower].repaymentPlan;
+        const borrowerPreviousSTDPayment = (firstYearPlanEstimates !== undefined) ? firstYearPlanEstimates[borrower].std : null;
+        const borrowerStandardCap = basicInfo[borrower].standardCap;
 
-            const planOptions = calculatePaymentPlans(borrowerLoans, AGI, portionOfPayment, povertyLine, dependents, standardCap, previousSTDPayment);
-            saveToHistory[borrower] = planOptions;
-            const monthlyPayment = planOptions[plan];
-            distributeMonthlyPaymentToLoans(borrower, loans, loanSums[borrower], monthlyPayment);
-        });
-    } else {
-        const borrowerLoans = loans.self;
-        const AGI = basicInfo.self.agi;
-        const portionOfPayment = 1;
-        const plan = basicInfo.self.repaymentPlan;
-        const previousSTDPayment = (firstYearPlanEstimates !== undefined) ? firstYearPlanEstimates['self'].std : null;
-        const povertyLine = calculatePovertyGuidelines(basicInfo.familySize, basicInfo.residency, year);
+        const familySize = basicInfo.familySize;
+        const residency = basicInfo.residency;
         const dependents = basicInfo.dependents;
-        const standardCap = basicInfo['self'].standardCap;
+        const borrowerPovertyLine = calculatePovertyGuidelines(familySize, residency, year);
 
-        const planOptions = calculatePaymentPlans(borrowerLoans, AGI, portionOfPayment, povertyLine, dependents, standardCap, previousSTDPayment);
-        saveToHistory['self'] = planOptions;
-        const monthlyPayment = planOptions[plan];
-        distributeMonthlyPaymentToLoans('self', loans, loanSums['self'], monthlyPayment);
-    }
+        let borrowerAGI = basicInfo[borrower].agi;
+        let borrowerPortionOfPayment = 1;
+        let borrowerDependents = dependents;
+        if (isMarried) {
+            if (filingJointly) {
+                borrowerAGI = householdAGI;
+                borrowerPortionOfPayment = (householdLoanSum > 0) ? loanSums[borrower] / householdLoanSum : 0.5;
+            } else {
+                dependents = (borrower === greaterAGI || borrowers.length === 1) ? dependents : 0;
+            }
+        }
+
+        const planOptions = calculatePaymentPlans(borrowerLoans, borrowerAGI, borrowerPortionOfPayment, borrowerPovertyLine, borrowerDependents, borrowerStandardCap, borrowerPreviousSTDPayment);
+        saveToHistory[borrower] = planOptions;
+        const monthlyPayment = planOptions[borrowerPlan];
+        distributeMinimumPayment(borrowerLoans, loanSums[borrower], monthlyPayment);
+    });
 
     return saveToHistory;
 
@@ -407,39 +414,31 @@ function calculateMinimumPayments(basicInfo, loans, year = 0, firstYearPlanEstim
         return planOptions;
     }
 }
-function getLoanSum(loans, borrower) {
+function getBorrowerLoanSum(borrowerLoans) {
     let total = 0;
-    const keys = Object.keys(loans[borrower]);
+    const keys = Object.keys(borrowerLoans);
     for (let i = 0; i < keys.length; i++) {
-        const principal = loans[borrower][keys[i]].principal;
-        const interestAccrual = loans[borrower][keys[i]].interestAccrual;
+        const principal = borrowerLoans[keys[i]].principal;
+        const interestAccrual = borrowerLoans[keys[i]].interestAccrual;
         total += principal + interestAccrual;
     }
     return total;
 }
-function distributeMonthlyPaymentToLoans(borrower, loans, totalLoanSumRaw, monthlyPayment) {
-    const borrowerLoans = loans[borrower];
-    const totalLoanSum = totalLoanSumRaw.roundDecimals(2);
-    let remainingPayment = monthlyPayment;
+function distributeMinimumPayment(borrowerLoans, borrowerLoanSum, paymentToDisperse) {
+    let remainingToDisperse = paymentToDisperse;
+    let lastID;
+    for (const loanID in borrowerLoans) {
+        const loan = borrowerLoans[loanID];
+        const loanBalance = loan.principal + loan.interestAccrual;
+        const portionToDisperse = (borrowerLoanSum > 0) ? (loanBalance / borrowerLoanSum * paymentToDisperse).roundDecimals(2) : 0;
 
-    let i = 0;
-    const loanLength = Object.keys(borrowerLoans).length;
-    for (const loan in borrowerLoans) {
-        const loanArr = borrowerLoans[loan];
-        const loanSum = loanArr.principal + loanArr.interestAccrual; // principal + interest
-
-        const shareOfLoanTotal = (totalLoanSum === 0) ? 0 : loanSum / totalLoanSum;
-        let shareOfPayment;
-        if (i === loanLength - 1) {
-            shareOfPayment = remainingPayment.roundDecimals(2);
-            remainingPayment = 0;
-        } else {
-            shareOfPayment = (shareOfLoanTotal * monthlyPayment).roundDecimals(2);
-            remainingPayment -= shareOfPayment;
-        }
-
-        loanArr.minPayment = shareOfPayment;
-        i++;
+        const currentMinPayment = (loan.minPayment) ? (loan.minPayment) : 0;
+        loan.minPayment = (currentMinPayment + portionToDisperse).roundDecimals(2);
+        remainingToDisperse -= portionToDisperse;
+        lastID = loanID;
+    }
+    if (remainingToDisperse) {
+        borrowerLoans[lastID].minPayment = (borrowerLoans[lastID].minPayment + remainingToDisperse).roundDecimals(2);
     }
 }
 
@@ -447,7 +446,7 @@ function distributeMonthlyPaymentToLoans(borrower, loans, totalLoanSumRaw, month
 /* -------------------------------------------------
     HEURISTIC REPAYMENT ORDERING
 ------------------------------------------------- */
-function getRepaymentOrders(basicInfo, loans) { 
+function getRepaymentOrders(loans) { 
     const findAvalanche = (loanPool) => (loanPool.sort((a,b) => {
         if (b.data.interestRate !== a.data.interestRate) {
             return b.data.interestRate - a.data.interestRate;
@@ -476,19 +475,7 @@ function getRepaymentOrders(basicInfo, loans) {
 
     
     /* -------------------- REPAYMENT ORDER HEURISTICS STARTS HERE -------------------- */
-    const { priority, married } = basicInfo;
-    const selfLoans = Object.entries(loans.self).map(([id, val]) => ({id, owner: 'self', data: val}));
-    const spouseLoans = (loans.spouse) ? Object.entries(loans.spouse).map(([id, val]) => ({id, owner: 'spouse', data: val})) : [];
-    
-    let primarySource = [];
-    let secondarySource = []; 
-    if (priority === 'both' || !married) {
-        primarySource = [...selfLoans, ...spouseLoans];
-    } else {
-        primarySource = (priority === 'self') ? [...selfLoans] : [...spouseLoans];
-        secondarySource = (priority === 'self') ? [...spouseLoans]: [...selfLoans];
-    }
-    
+    const borrowers = Object.keys(loans);
     const repaymentOrders = {};
     const heuristics = {
         avalanche: findAvalanche,
@@ -497,16 +484,14 @@ function getRepaymentOrders(basicInfo, loans) {
         highestMinPayment: findHighestMinPayment
     };
     Object.keys(heuristics).forEach(hKey => {
-        const primarySorted = heuristics[hKey]([...primarySource]);
-        const secondarySorted = heuristics[hKey]([...secondarySource]);
-        repaymentOrders[hKey] = [...primarySorted, ...secondarySorted];
+        repaymentOrders[hKey] = {};
+        borrowers.forEach(borrower => {
+            const borrowerLoans = Object.entries(loans[borrower]).map(([id, val]) => ({id, owner: borrower, data: val}));
+            const borrowerSortedLoans = heuristics[hKey]([...borrowerLoans]);
+            borrowerSortedLoans.forEach(loan => { delete loan.data });
+            repaymentOrders[hKey][borrower] = borrowerSortedLoans;
+        });
     });
-
-    for (const order in repaymentOrders) {
-        for (const key of repaymentOrders[order]) {
-            delete key.data;
-        }
-    }
     return repaymentOrders;
 } 
 
@@ -606,7 +591,7 @@ function simulateRepayment(basicInfo_BASE, loans_BASE, repaymentOrders_BASE, fir
             }
 
             const remainingPayments = getRemainingPayments(basicInfo, borrower);
-            const loanSum = getLoanSum(loans, borrower);
+            const loanSum = getBorrowerLoanSum(loans[borrower]);
             const loanCount = Object.keys(loans[borrower]).length;
             const borrowerStatus = (loanCount === 0) ? 
                 'non-borrower' : (loanSum === 0) ? 
@@ -744,7 +729,7 @@ function simulateRepayment(basicInfo_BASE, loans_BASE, repaymentOrders_BASE, fir
             let familyTotalPayments         = 0;
             let familyTotalPrincipalMatch   = 0;
             borrowers.forEach(borrower => {
-                const borrowerRemainingBalance = getLoanSum(loans, borrower);
+                const borrowerRemainingBalance = getBorrowerLoanSum(loans[borrower]);
                 thisMonthSimulation[borrower].remainingBalance      = borrowerRemainingBalance.roundDecimals(2);
                 thisMonthSimulation[borrower].totalAccruedInterest  = totals[borrower].totalAccruedInterest;
                 thisMonthSimulation[borrower].totalInterestWaived   = totals[borrower].totalInterestWaived;
@@ -1037,23 +1022,8 @@ function simulateRepayment(basicInfo_BASE, loans_BASE, repaymentOrders_BASE, fir
         delete borrowerLoans[loanID];
         if (Object.keys(borrowerLoans).length === 0) return;
 
-        const remainingSum = Object.entries(borrowerLoans).reduce((total, borrowerLoans) => {
-            return total +=  borrowerLoans[1].principal + borrowerLoans[1].interestAccrual;
-        }, 0);
-
-        let remainingToDisperse = minToDisperse;
-        let lastID;
-        for (const loanID in borrowerLoans) {
-            const loan = borrowerLoans[loanID];
-            const loanBalance = loan.principal + loan.interestAccrual;
-            const portionToDisperse = (loanBalance / remainingSum * minToDisperse).roundDecimals(2);
-            loan.minPayment = (loan.minPayment + portionToDisperse).roundDecimals(2);
-            remainingToDisperse -= portionToDisperse;
-            lastID = loanID
-        }
-        if (remainingToDisperse) {
-            borrowerLoans[lastID].minPayment = (borrowerLoans[lastID].minPayment + remainingToDisperse).roundDecimals(2);
-        }
+        const remainingSum = getBorrowerLoanSum(borrowerLoans);
+        distributeMinimumPayment(borrowerLoans, remainingSum, minToDisperse);
     }
 
     function rapWaiveInterest(borrowerMonthlyStats, loans, borrower) {
@@ -1062,7 +1032,7 @@ function simulateRepayment(basicInfo_BASE, loans_BASE, repaymentOrders_BASE, fir
         const waivedInterest = Math.max(0, monthlyInterest - monthlyPayment);
 
         let remainingWaive = waivedInterest;
-        const loanSum = getLoanSum(loans, borrower);
+        const loanSum = getBorrowerLoanSum(loans[borrower]);
         const borrowerLoans = loans[borrower];
         for (const loanID in borrowerLoans) {
             const loan = borrowerLoans[loanID]

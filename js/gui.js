@@ -806,19 +806,23 @@ function submitForm(event) {
     if (!pass) return;
 
     const output = calculatePayments(formObject);
-    if (output !== undefined && output.length > 0) {
+    if (output !== undefined) {
         const elements = document.getElementsByClassName('submitAnimation');
         Array.from(elements).forEach(element => {
             element.style.display = "flex";
             element.classList.remove('animated-' + element.id);
             element.offsetHeight;
+
             element.classList.add('animated-' + element.id);
         });
-        results.textContent = output;
-        announce(output);
+
+        const placeholder = JSON.stringify(new Date());
+        results.textContent = placeholder;
+        announce(placeholder);
 
         smoothScroll("resultsContainer");
         results.parentElement.focus();
+        if (typeof(output) === 'object') formatOutput(output); // gonna need a worker for this to keep it off the main thread
     }
 }
 
@@ -1275,7 +1279,7 @@ function debounce(func, delay) {
 }
 
 // Scrolling to top of specific div
-function smoothScroll(targetId, duration = 1000) {
+function smoothScroll(targetId, duration = 1250) {
     const targetElement = document.getElementById(targetId);
     if (!targetElement) return;
   
@@ -1795,6 +1799,7 @@ function removeLoanInputListeners(rowElement) {
 
 // Adds loan child divs to the borrowers loan table, renames existing loans and adds listeners
 function addRow(referenceRow) {
+    if (referenceRow.closest("tbody").childElementCount >= 25) return; // 25 LIMIT
     const cacheToUpdate = {};
     const borrower = referenceRow.id.split("_loan")[0];
     const loanNumber = parseInt(referenceRow.id.split("_loan")[1]) + 1;

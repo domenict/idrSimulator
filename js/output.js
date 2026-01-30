@@ -1,12 +1,10 @@
 let lastOutput = null;
 
-function formatOutput(rawOutput_BASE) {
-    const rawOutput = structuredClone(rawOutput_BASE);
-    const optimalHeuristics = rawOutput.optimalHeuristics;
-    const borrowers = Object.keys(optimalHeuristics);
-    delete rawOutput.optimalHeuristics;
+async function formatOutput(rawOutput) {
+    const formattedOutput = structuredClone(rawOutput);
+    const simulations = formattedOutput.simulations;
+    const borrowers = Object.keys(formattedOutput.loans);
 
-    const formattedOutput = { 'simulations': {} };
     const strategyComparison = {
         family: {
             totalPayments: {},
@@ -19,8 +17,7 @@ function formatOutput(rawOutput_BASE) {
             irsSixYearLoanInterestAccrual: {},
             totalInterestWaived: {},
             totalPrincipalMatch: {}
-        },
-        repaymentOrders: {}
+        }
     };
     borrowers.forEach(borrower => { 
         strategyComparison[borrower] = {};
@@ -36,12 +33,14 @@ function formatOutput(rawOutput_BASE) {
         strategyComparison[borrower].totalInterestWaived = {};
         strategyComparison[borrower].totalPrincipalMatch = {};
     });
-    Object.entries(rawOutput).forEach(strategy => {
+    
+    Object.entries(simulations).forEach(strategy => {
         const strategyID = strategy[0];
+        if (strategyID === 'optimalHeuristics') return;
+        
         const strategyData = structuredClone(strategy[1]);
-        formattedOutput.simulations[strategyID] = strategyData;
+        simulations[strategyID] = strategyData;
 
-        strategyComparison.repaymentOrders[strategyID]              = strategyData.repaymentOrders;
         strategyComparison.family.totalPayments[strategyID]         = strategyData.totals.familyTotalPayments;
         strategyComparison.family.totalAccruedInterest[strategyID]  = strategyData.totals.familyTotalAccruedInterest;
         strategyComparison.family.remainingBalance[strategyID]      = strategyData.totals.familyRemainingBalance;
@@ -68,45 +67,9 @@ function formatOutput(rawOutput_BASE) {
             borrowerObj.totalPrincipalMatch[strategyID]             = strategyData.totals[borrower].totalPrincipalMatch;
         });
     })
-    formattedOutput.strategyComparison = structuredClone(strategyComparison);
-    formattedOutput.optimalHeuristics = optimalHeuristics;
-    lastOutput = formatOutput;
+    simulations.strategyComparison = structuredClone(strategyComparison);
+    lastOutput = formattedOutput;
 
     console.log(`SIMULATED OUTPUT: ${new Date()}`);
-    console.log(`${Math.floor(roughSizeOfObject(formattedOutput) / 1000)} KB`);
     console.log(formattedOutput);
 }
-
-function roughSizeOfObject(object) {
-    const objectList = [];
-    const stack = [object];
-    let bytes = 0;
-  
-    while (stack.length) {
-      const value = stack.pop();
-  
-      switch (typeof value) {
-        case 'boolean':
-          bytes += 4;
-          break;
-        case 'string':
-          bytes += value.length * 2;
-          break;
-        case 'number':
-          bytes += 8;
-          break;
-        case 'object':
-          if (!objectList.includes(value)) {
-            objectList.push(value);
-            for (const prop in value) {
-              if (value.hasOwnProperty(prop)) {
-                stack.push(value[prop]);
-              }
-            }
-          }
-          break;
-      }
-    }
-  
-    return bytes;
-  }

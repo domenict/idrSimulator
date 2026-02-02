@@ -55,22 +55,18 @@ function calculatePayments(data) {
         const inputValidated = inputValidation(sortedData, basicInfo, loans); //basicInfo & loans populated with user input
         if (!inputValidated) throw new Error('Input validation failure');
 
-        //Function adds/modifies loans object with minimum payment of each loan
         const firstYearPlanEstimates = calculateMinimumPayments(basicInfo, loans);
-
-        // Outputs repayment orders likely to result in minimizing total loan payment over the life of the loans
-        // This is only generated once with base user input and is not updated as repayment is simulated
-        // Heuristics:
-        //      Avalanche: Lowest Balance   - Highest interest rate, lowest balance
-        //      Immediate Bleed             - Prioritizes loan generating the most interest
-        //      Snowball                    - Prioritizes loan with the lowest balance
-        //      Highest Minimum Payment     - Prioritizes loan with the largest minimum payment
         const repaymentOrders = getRepaymentOrders(loans);
 
         console.time('Calculation Time');
         const simulatedPayments = simulateRepayment(basicInfo, loans, repaymentOrders, firstYearPlanEstimates);
-        if (simulatedPayments === 'no borrowers') return 'There are no loans to simulate repayment.\nPlease provide loan data and try again.'
         console.timeEnd("Calculation Time");
+        if (simulatedPayments === 'no borrowers') {
+            return  'There are no loans to simulate repayment. ' +
+                    'This could be due to all borrower loans being disabled, ' +
+                    'having a zero balance or meeting their plan maximum.' +
+                    '\n\nPlease ensure accuracy and try again.'
+        }
 
         return simulatedPayments;
     } catch (err) {
@@ -392,7 +388,7 @@ function calculateMinimumPayments(basicInfo, loans, year = 0, firstYearPlanEstim
             return Math.max(10, monthlyPayment); // $10 minimum monthly payment
         }
         const std = (loans, standardCap, previousSTDPayment) => {
-            if (standardCap) return standardCap;
+            if (standardCap) return standardCap; // most priority
             if (previousSTDPayment) return previousSTDPayment;
 
             let totalMonthly = 0;
@@ -430,7 +426,7 @@ function getBorrowerLoanSum(borrowerLoans) {
 }
 
 /* -------------------------------------------------
-    HEURISTIC REPAYMENT ORDERING
+   REPAYMENT ORDERING
 ------------------------------------------------- */
 function getRepaymentOrders(loans) { 
     const findAvalanche = (loanPool) => (loanPool.sort((a,b) => {
@@ -443,40 +439,13 @@ function getRepaymentOrders(loans) {
         return aBalance - bBalance;
     }));
 
-    const findImmediateBleed = (loanPool) => (loanPool.sort((a,b) => {
-        const aAccrual = (a.data.interestRate / 100 * a.data.principal);
-        const bAccrual = (b.data.interestRate / 100 * b.data.principal);
-        return bAccrual - aAccrual;
-    }));
-
-    const findSnowball = (loanPool) => (loanPool.sort((a,b) => {
-        const aBalance = a.data.principal + a.data.interestAccrual;
-        const bBalance = b.data.principal + b.data.interestAccrual;
-        return aBalance - bBalance;
-    }));
-    
-    const findHighestMinPayment = (loanPool) => (loanPool.sort((a,b) => {
-        return b.data.minPayment - a.data.minPayment;
-    }));
-
-    
-    /* -------------------- REPAYMENT ORDER HEURISTICS STARTS HERE -------------------- */
     const borrowers = Object.keys(loans);
     const repaymentOrders = {};
-    const heuristics = {
-        avalanche: findAvalanche,
-        debtSnowball: findSnowball,
-        immediateBleed: findImmediateBleed,
-        highestMinPayment: findHighestMinPayment
-    };
-    Object.keys(heuristics).forEach(hKey => {
-        repaymentOrders[hKey] = {};
-        borrowers.forEach(borrower => {
-            const borrowerLoans = Object.entries(loans[borrower]).map(([id, val]) => ({id, owner: borrower, data: val}));
-            const borrowerSortedLoans = heuristics[hKey]([...borrowerLoans]);
-            borrowerSortedLoans.forEach(loan => { delete loan.data });
-            repaymentOrders[hKey][borrower] = borrowerSortedLoans;
-        });
+    borrowers.forEach(borrower => {
+        const borrowerLoans = Object.entries(loans[borrower]).map(([id, val]) => ({id, owner: borrower, data: val}));
+        const borrowerSortedLoans = findAvalanche([...borrowerLoans]);
+        borrowerSortedLoans.forEach(loan => { delete loan.data });
+        repaymentOrders[borrower] = borrowerSortedLoans;
     });
     return repaymentOrders;
 } 
@@ -489,53 +458,36 @@ function simulateRepayment(basicInfo_BASE, loans_BASE, repaymentOrders_BASE, fir
     const borrowers_BASE = Object.keys(loans_BASE); 
     if (borrowers_BASE.length === 0) return 'no borrowers';
 
+    const borrowers = structuredClone(borrowers_BASE);
+    const basicInfo = structuredClone(basicInfo_BASE);
+    const loans = structuredClone(loans_BASE);
+    const repaymentOrders = structuredClone(repaymentOrders_BASE);
+    const firstYearPlanEstimates = structuredClone(firstYearPlanEstimates_BASE);
     const repaymentSimulations = {
         'basicInfo': structuredClone(basicInfo_BASE),
         'loans': structuredClone(loans_BASE),
         'repaymentOrders': structuredClone(repaymentOrders_BASE),
         'firstYearPlanEstimates': structuredClone(firstYearPlanEstimates_BASE),
-        'simulations': {}
     };
 
-    const simulations = repaymentSimulations.simulations;
-    const borrowers_FILTERED = structuredClone(borrowers_BASE);
-    const basicInfo_FILTERED = structuredClone(basicInfo_BASE);
-    const loans_FILTERED = structuredClone(loans_BASE);
-    const repaymentOrders_FILTERED = structuredClone(repaymentOrders_BASE);
-    const firstYearPlanEstimates_FILTERED = structuredClone(firstYearPlanEstimates_BASE);
-
-    // Filter invalid borrowers
-    const optimalHeuristics = {};
+    // Filter invalid borrowers while gathering baselines for valid borrowers
     const borrowersRemainingPayments = {};
+    const borrowerOverpayments = {};
+    const borrowerStartingStatus = {};
+    let highestBorrowerRemainingPayment = 0;
     borrowers_BASE.forEach(borrower => {
-        const borrowerRemainingPayments = getRemainingPayments(basicInfo_FILTERED, borrower);
-        if (borrowerRemainingPayments) {
-            optimalHeuristics[borrower] = null;
-            borrowersRemainingPayments[borrower] = borrowerRemainingPayments;
-            const monthlyPayment = firstYearPlanEstimates_FILTERED[borrower][basicInfo_FILTERED[borrower].repaymentPlan];
-            const borrowerLoanSum = getBorrowerLoanSum(loans_FILTERED[borrower])
-            distributeMinimumPayment(loans_FILTERED[borrower], borrowerLoanSum, monthlyPayment);
-        } else {
-            delete borrowers_FILTERED[borrower];
-            delete basicInfo_FILTERED[borrower];
-            delete loans_FILTERED[borrower];
-            delete firstYearPlanEstimates_FILTERED[borrower];
-            Object.keys(repaymentOrders_FILTERED).forEach(hueristic => delete repaymentOrders_FILTERED[hueristic][borrower]);
-        }
-    });
-    if (borrowers_FILTERED.length === 0) return 'no borrowers';
+        const borrowerLoanSum = getBorrowerLoanSum(loans[borrower]);
+        const borrowerRemainingPayments = getRemainingPayments(basicInfo, borrower);
+        if (borrowerRemainingPayments > highestBorrowerRemainingPayment) highestBorrowerRemainingPayment = borrowerRemainingPayments;
 
-    // input args are deeply cloned as they may be modified throughout simulation
-    Object.entries(repaymentOrders_FILTERED).forEach(hueristic => {
-        const basicInfo = structuredClone(basicInfo_FILTERED);
-        const loans = structuredClone(loans_FILTERED);
-        const firstYearPlanEstimates = structuredClone(firstYearPlanEstimates_FILTERED);
-        const borrowers = structuredClone(borrowers_FILTERED);
-        
-        // Gather some borrower specific base objects
-        const borrowerOverpayments = {};
-        const borrowerRepaymentOrders = {};
-        borrowers.forEach(borrower => {
+        if (borrowerRemainingPayments > 0 && borrowerLoanSum > 0) {
+            borrowersRemainingPayments[borrower] = borrowerRemainingPayments;
+            borrowerStartingStatus[borrower] = 'unpaid';
+
+            // Distribute minimum payments
+            const monthlyPayment = firstYearPlanEstimates[borrower][basicInfo[borrower].repaymentPlan];
+            distributeMinimumPayment(loans[borrower], borrowerLoanSum, monthlyPayment);
+
             // Apply interest reduction
             const interestReduction = basicInfo[borrower].interestReduction;
             if (interestReduction) {
@@ -545,357 +497,340 @@ function simulateRepayment(basicInfo_BASE, loans_BASE, repaymentOrders_BASE, fir
                 }
             }
 
-            // Get overpayment to income ratio as well as repayment order per borrower
+            // Get overpayment to income ratio
             const borrowerOverPayment = basicInfo[borrower].monthlyOverpayment;
             const borrowerAGI = basicInfo[borrower].agi;
             borrowerOverpayments[borrower] = {
                 'monthlyOverpayment': borrowerOverPayment,
                 'ratio': (borrowerAGI > 0) ? borrowerOverPayment / borrowerAGI : 0
             }
-            borrowerRepaymentOrders[borrower] = structuredClone(hueristic[1][borrower]);
-        });
+        } else {
+            const status = (!borrowerRemainingPayments) ? 'qualified payments met' : 'no starting balance';
+            borrowerStartingStatus[borrower] = status;
 
-        // Explicit creation of the JSON structures for each heuristic simulation.
-        // This allows storing baselines as the 0th month.
-        // Totals are modified throughout simulation. 
-        // Monthly template is copied and modified each month into simulatedPayments.
-        const hueristicName = hueristic[0];
-        simulations[hueristicName] = { 
-            'totals': {
-                'familyFederalTaxes':  0,
-                'familyForgiveness': 0,
-                'familyIRSSixYearLoanInterestAccrual': 0,
-                'familyPaymentDuration': 0,
-                'familyRemainingBalance': 0,
-                'familyTotalAccruedInterest': 0,
-                'familyTotalInterestWaived': 0,
-                'familyTotalPayments': 0,
-                'familyTotalPrincipalMatch': 0,
-                'sameYearForgiveness': false
-            }, 
-            'simulatedPayments': {}
-        };
-        const totals = simulations[hueristicName].totals;
-        const simulatedPayments = simulations[hueristicName].simulatedPayments;
+            // Keep basicInfo[borrower] as invalid borrower can still affect IDR recertification
+            borrowers.splice(borrowers.indexOf(borrower), 1);
+            delete loans[borrower];
+            delete repaymentOrders[borrower];
+            delete firstYearPlanEstimates[borrower]
+        }
+    });
+    if (borrowers.length === 0) return 'no borrowers';
 
-        const monthlyTemplate = {
-            'familyMinimumPayment': 0,
+
+    // Explicit creation of the JSON structure.
+    // Totals are modified throughout simulation. 
+    // Monthly template is copied and modified each month into simulatedPayments.
+    repaymentSimulations.simulation = { 
+        'totals': {
+            'familyFederalTaxes':  0,
+            'familyForgiveness': 0,
+            'familyIRSSixYearLoanInterestAccrual': 0,
+            'familyPaymentDuration': 0,
             'familyRemainingBalance': 0,
             'familyTotalAccruedInterest': 0,
             'familyTotalInterestWaived': 0,
-            'familyTotalOverpayment': 0,
             'familyTotalPayments': 0,
             'familyTotalPrincipalMatch': 0,
-            'remainingLoans': structuredClone(loans),
-            'minimumPayments': structuredClone(firstYearPlanEstimates)
+            'sameYearForgiveness': false
+        }, 
+        'monthlyStatistics': {}
+    };
+    borrowers_BASE.forEach(borrower => {
+        const borrowerTotals = {
+            'agi': basicInfo_BASE[borrower].agi,
+            'federalTaxes': 0,
+            'forgiveness': 0,
+            'irsSixYearLoanInterestAccrual': 0,
+            'paymentDuration': 0,
+            'pslfEligible': basicInfo_BASE[borrower].pslfEligible,
+            'remainingBalance': 0,
+            'status': borrowerStartingStatus[borrower],
+            'totalAccruedInterest': 0,
+            'totalInterestWaived': 0,
+            'totalPayments': 0,
+            'totalPrincipalMatch': 0
         }
-        borrowers.forEach(borrower => {
-            const borrowerTotals = {
-                'agi': basicInfo[borrower].agi,
-                'federalTaxes': 0,
-                'forgiveness': 0,
-                'irsSixYearLoanInterestAccrual': 0,
-                'paymentDuration': 0,
-                'pslfEligible': basicInfo[borrower].pslfEligible,
-                'remainingBalance': 0,
-                'status': 'unpaid',
-                'totalAccruedInterest': 0,
-                'totalInterestWaived': 0,
-                'totalPayments': 0,
-                'totalPrincipalMatch': 0
-            }
-            const borrowerMonthly = {
-                'agi': basicInfo[borrower].agi,
-                'interestWaived': 0,
-                'minimumPayment': firstYearPlanEstimates[borrower][basicInfo[borrower].plan],
-                'monthlyInterest': 0,
-                'monthlyOverpayment': basicInfo[borrower].monthlyOverpayment,
-                'monthlyPayment': 0,
-                'principalMatched': 0,
-                'remainingBalance': 0,
-                'totalAccruedInterest': 0,
-                'totalPayments': 0,
-                'totalInterestWaived': 0,
-                'totalPrincipalMatch': 0
-            }
-
-            const borrowerRemainingPayments = borrowersRemainingPayments[borrower];
-            const loanSum = getBorrowerLoanSum(loans[borrower]);
-            const borrowerStatus = (loanSum === 0) ? 
-                'paid' : (borrowerRemainingPayments === 0) ? 
-                'forgiven' : 'unpaid';
-
-            borrowerTotals.status = borrowerStatus;
-            simulations[hueristicName].totals[borrower] = borrowerTotals;
-            monthlyTemplate[borrower] = borrowerMonthly;
-        });
-        simulations[hueristicName].simulatedPayments['0'] = structuredClone(monthlyTemplate);
-
-
-        /* -------------------- MONTHLY REPAYMENT LOOP -------------------- */
-        let year = 0;
-        let month = 0;
-        let remainingPayments = Object.keys(borrowersRemainingPayments).reduce((highestRepaymentPeriod, borrower) => {
-            const borrowerRemainingPayment = borrowersRemainingPayments[borrower]
-            if (borrowerRemainingPayment > highestRepaymentPeriod) {
-                return borrowerRemainingPayment;
-            } else {
-                return highestRepaymentPeriod;
-            }
-        }, 0);
-        let borrowersProcessed = borrowers.reduce((processed, borrower) => {
-            let numberProcessed = processed;
-            if (simulations[hueristicName].totals[borrower].status !== 'unpaid') numberProcessed++;
-            return numberProcessed;
-        }, 0);
-
-        while (remainingPayments && borrowersProcessed != borrowers.length) {
-            month++;
-            simulatedPayments[month] = structuredClone(monthlyTemplate);
-            const thisMonthSimulation = simulatedPayments[month];
-
-            // Anually recertify IDR, update income based on income growth, and update borrower overpayments
-            borrowers.forEach(borrower => { borrowerOverpayments[borrower].monthlyOverpayment = basicInfo[borrower].monthlyOverpayment});
-            if (month > 12 && month % 12 === 1 ) {
-                year++;
-                borrowers.forEach(borrower => {
-                    const income = basicInfo[borrower].agi;
-                    const growth = basicInfo[borrower].annualGrowth / 100 + 1;
-                    const newAGI = income * growth; 
-                    basicInfo[borrower].agi = newAGI.roundDecimals(2);
-                    
-                    const borrowerOverpaymentRatio = borrowerOverpayments[borrower].ratio;
-                    const newBorrowerMonthlyOverpayment = newAGI * borrowerOverpaymentRatio;
-                    borrowerOverpayments[borrower].monthlyOverpayment = newBorrowerMonthlyOverpayment;
-                    basicInfo[borrower].monthlyOverpayment = newBorrowerMonthlyOverpayment;
-                });
-
-                const recertification = calculateMinimumPayments(basicInfo, loans, year, firstYearPlanEstimates);;
-                thisMonthSimulation.minimumPayments = recertification;
-                borrowers.forEach(borrower => {
-                    const monthlyPayment = recertification[borrower][basicInfo[borrower].repaymentPlan];
-                    const borrowerLoanSum = getBorrowerLoanSum(loans[borrower])
-                    distributeMinimumPayment(loans[borrower], borrowerLoanSum, monthlyPayment);
-                })
-            }
-            
-            // Get initial loan state, then apply interest accrual followed by minimum payments
-            let familyMinimumPayment = 0;
-            const initialLoanState = {}; // Sort of important for RAP so dont forget about this guy
-            borrowers.forEach(borrower => {
-                thisMonthSimulation[borrower].agi = basicInfo[borrower].agi;
-                initialLoanState[borrower] = structuredClone(loans[borrower]);
-
-                if (totals[borrower].status === 'unpaid') {
-                    let totalAccruedInterest = totals[borrower].totalAccruedInterest;
-                    const borrowerAccrual = applyInterestAccrual(loans[borrower]);
-                    thisMonthSimulation[borrower].monthlyInterest = borrowerAccrual.roundDecimals(2);
-                    totals[borrower].totalAccruedInterest = (totalAccruedInterest + borrowerAccrual).roundDecimals(2);
-
-                    let totalPayments = totals[borrower].totalPayments;
-                    const borrowerMinPayment = applyMinimumPayment(loans[borrower]);
-                    thisMonthSimulation[borrower].minimumPayment = borrowerMinPayment.roundDecimals(2);
-                    thisMonthSimulation[borrower].monthlyPayment = thisMonthSimulation[borrower].minimumPayment;
-                    totals[borrower].totalPayments = (totalPayments + borrowerMinPayment).roundDecimals(2);
-                    familyMinimumPayment = (familyMinimumPayment + borrowerMinPayment).roundDecimals(2);
-                } else {
-                    thisMonthSimulation[borrower].monthlyInterest = 0;
-                    thisMonthSimulation[borrower].minimumPayment = 0;
-                }
-            });
-
-            // RAP interest waive then principal match - must be applied before overpayments
-            borrowers.forEach(borrower => {
-                if (basicInfo[borrower].repaymentPlan === 'rap') {
-                    const monthlyPayment = thisMonthSimulation[borrower].monthlyPayment;
-                    const monthlyInterest = thisMonthSimulation[borrower].monthlyInterest;
-                    const totalAccruedInterest = totals[borrower].totalAccruedInterest;
-                    const totalInterestWaived = totals[borrower].totalInterestWaived;
-
-                    const waivedInterest = rapWaiveInterest(monthlyPayment, monthlyInterest, loans, borrower);
-                    thisMonthSimulation[borrower].monthlyInterest = (monthlyInterest - waivedInterest).roundDecimals(2);
-                    totals[borrower].totalAccruedInterest = (totalAccruedInterest - waivedInterest).roundDecimals(2);
-                    thisMonthSimulation[borrower].interestWaived = waivedInterest.roundDecimals(2);
-                    totals[borrower].totalInterestWaived = (totalInterestWaived + waivedInterest).roundDecimals(2);
-
-                    const totalPrincipalMatch = totals[borrower].totalPrincipalMatch;
-                    const principalMatch = rapPrincipalMatch(initialLoanState, monthlyPayment, loans, borrower);
-                    thisMonthSimulation[borrower].principalMatch = principalMatch.roundDecimals(2);
-                    totals[borrower].totalPrincipalMatch = (totalPrincipalMatch + principalMatch).roundDecimals(2);
-                }
-            });
-
-            // Apply borrower overpayments
-            let familyTotalOverpayment = 0;
-            let previousBorrowerRemainingOverpayment = 0;
-            thisMonthSimulation.overpayedLoans = [];
-            borrowers.forEach(borrower => {
-                const poolOverpaymentsEnabled = basicInfo.poolOverpayments;
-                const baseOverpayment = borrowerOverpayments[borrower].monthlyOverpayment;
-                let remainingOverpayment = baseOverpayment;
-                let additionalOverpayment = 0;
-
-                // Combine overpayments if borrower still paying and other borrower has loans and paid in full
-                const otherBorrower = borrowers.find(b => b !== borrower);
-                const thisBorrowerLoanCount = borrowerRepaymentOrders[borrower].length
-                if (poolOverpaymentsEnabled && otherBorrower && thisBorrowerLoanCount > 0) {
-                    const otherBorrowerLoanCount = borrowerRepaymentOrders[otherBorrower].length;
-                    if (otherBorrowerLoanCount === 0) {
-                        const otherBorrowerOverpayment = borrowerOverpayments[otherBorrower].monthlyOverpayment;
-                        additionalOverpayment = (previousBorrowerRemainingOverpayment) ? previousBorrowerRemainingOverpayment : otherBorrowerOverpayment;
-                        remainingOverpayment += additionalOverpayment;
-                        previousBorrowerRemainingOverpayment = 0;
-                    }
-                }
-
-                while(borrowerRepaymentOrders[borrower].length > 0 && remainingOverpayment > 0.01) {
-                    const loanObject = borrowerRepaymentOrders[borrower][0];
-                    const loanID = loanObject.id;
-                    const loan = loans[borrower][loanID];
-
-                    if (loan === undefined || totals[borrower].status !== 'unpaid') {
-                        borrowerRepaymentOrders[borrower].shift();
-                        continue;
-                    }
-    
-                    let borrowerTotalPayments = totals[borrower].totalPayments;
-                    let borrowerMonthlyPayment = thisMonthSimulation[borrower].monthlyPayment;
-                    let remainingBalance = makePayment(remainingOverpayment, loan);
-                    thisMonthSimulation.overpayedLoans.push(loanObject);
-    
-                    if (loan.principal === 0 && loan.interestAccrual === 0) {
-                        deleteLoan(loans[borrower], loanID);
-                        borrowerRepaymentOrders[borrower].shift();
-                    }
-    
-                    if (remainingBalance > 0.01) {
-                        const diff = remainingOverpayment - remainingBalance;
-                        totals[borrower].totalPayments = (borrowerTotalPayments + diff).roundDecimals(2);
-                        thisMonthSimulation[borrower].monthlyPayment = (borrowerMonthlyPayment + diff).roundDecimals(2);
-                        remainingOverpayment = remainingBalance;
-                    } else {
-                        totals[borrower].totalPayments = (borrowerTotalPayments + remainingOverpayment).roundDecimals(2);
-                        thisMonthSimulation[borrower].monthlyPayment = (borrowerMonthlyPayment + remainingOverpayment).roundDecimals(2);
-                        remainingOverpayment = 0;
-                    }
-                }
-
-                let appliedOverpayment = baseOverpayment + additionalOverpayment; 
-                if (remainingOverpayment > 0.01) {
-                    appliedOverpayment -= remainingOverpayment;
-                    if (appliedOverpayment > 0.01) previousBorrowerRemainingOverpayment = remainingOverpayment;
-                }
-
-                familyTotalOverpayment = (familyTotalOverpayment + appliedOverpayment).roundDecimals(2);
-                thisMonthSimulation[borrower].monthlyOverpayment = appliedOverpayment.roundDecimals(2);
-            });
-
-            // Update monthly values and totals
-            let familyRemainingBalance      = 0;
-            let familyTotalAccruedInterest  = 0;
-            let familyTotalInterestWaived   = 0;
-            let familyTotalPayments         = 0;
-            let familyTotalPrincipalMatch   = 0;
-            borrowers.forEach(borrower => {
-                const borrowerRemainingBalance = getBorrowerLoanSum(loans[borrower]);
-                thisMonthSimulation[borrower].remainingBalance      = borrowerRemainingBalance.roundDecimals(2);
-                thisMonthSimulation[borrower].totalAccruedInterest  = totals[borrower].totalAccruedInterest;
-                thisMonthSimulation[borrower].totalInterestWaived   = totals[borrower].totalInterestWaived;
-                thisMonthSimulation[borrower].totalPayments         = totals[borrower].totalPayments;
-                thisMonthSimulation[borrower].totalPrincipalMatch   = totals[borrower].totalPrincipalMatch;
-                
-                familyTotalAccruedInterest  = familyTotalAccruedInterest + thisMonthSimulation[borrower].totalAccruedInterest;
-                familyRemainingBalance      = familyRemainingBalance + borrowerRemainingBalance;
-                familyTotalInterestWaived   = familyTotalInterestWaived + thisMonthSimulation[borrower].totalInterestWaived;
-                familyTotalPayments         = familyTotalPayments + thisMonthSimulation[borrower].totalPayments;
-                familyTotalPrincipalMatch   = familyTotalPrincipalMatch + thisMonthSimulation[borrower].totalPrincipalMatch;
-
-                if (totals[borrower].status === 'unpaid') {
-                    const paid = thisMonthSimulation[borrower].remainingBalance === 0;
-                    const forgiven = month === getRemainingPayments(basicInfo, borrower);
-
-                    if (paid || forgiven) {
-                        totals[borrower].status = (paid) ? 'paid' : 'forgiven';
-                        totals[borrower].paymentDuration = month;
-                        borrowersProcessed++;
-                    }
-                }
-            });
-            thisMonthSimulation.familyMinimumPayment        = familyMinimumPayment.roundDecimals(2);
-            thisMonthSimulation.familyRemainingBalance      = familyRemainingBalance.roundDecimals(2);
-            thisMonthSimulation.familyTotalAccruedInterest  = familyTotalAccruedInterest.roundDecimals(2);
-            thisMonthSimulation.familyTotalInterestWaived   = familyTotalInterestWaived.roundDecimals(2);
-            thisMonthSimulation.familyTotalOverpayment      = familyTotalOverpayment.roundDecimals(2);
-            thisMonthSimulation.familyTotalPayments         = familyTotalPayments.roundDecimals(2);
-            thisMonthSimulation.familyTotalPrincipalMatch   = familyTotalPrincipalMatch.roundDecimals(2);
-            thisMonthSimulation.remainingLoans              = structuredClone(loans);
-            
-            remainingPayments--;
-        }
-
-
-        /* -------------------- POST LOOP TOTALS-------------------- */
-        // Tax bomb
-        let familyFederalTaxes                  = 0;
-        let familyForgiveness                   = 0;
-        let familyIRSSixYearLoanInterestAccrual = 0;
-        let previousBorrowerBalance             = 0;
-        let previousBorrowerForgivenessYear     = 0;
-        borrowers.forEach(borrower => {
-            const forgivenessMonth = Math.min(month, getRemainingPayments(basicInfo, borrower));
-            const forgivenessYear = Math.floor(forgivenessMonth / 12);
-            const remainingBalance = simulatedPayments[forgivenessMonth][borrower].remainingBalance;
-            totals[borrower].remainingBalance = remainingBalance; // Need before tax calculation
-            totals[borrower].agi = basicInfo[borrower].agi;
-
-            const sameYearForgiveness = forgivenessYear === previousBorrowerForgivenessYear && totals[borrower].status === 'forgiven';
-            const taxedForgiveness = (basicInfo[borrower].pslfEligible) ? 
-                                      0 : taxBomb(basicInfo, remainingBalance, borrowers, borrower, forgivenessYear, sameYearForgiveness, previousBorrowerBalance);
-            totals[borrower].totalPayments = (totals[borrower].totalPayments + taxedForgiveness).roundDecimals(2);
-            totals.sameYearForgiveness = sameYearForgiveness;
-            totals[borrower].federalTaxes = taxedForgiveness;
-            familyFederalTaxes = familyFederalTaxes + taxedForgiveness;
-            
-            const forgiveness = remainingBalance - taxedForgiveness;
-            totals[borrower].forgiveness = forgiveness.roundDecimals(2);
-            familyForgiveness = familyForgiveness + forgiveness;
-            previousBorrowerBalance = remainingBalance;
-            previousBorrowerForgivenessYear = forgivenessYear;
-
-            const irsMonthlyRate = IRS_LOAN.rate / 12 + IRS_LOAN.monthlyPenalty;
-            const irsCompoundAmountFactor =  Math.pow((1 + irsMonthlyRate), IRS_LOAN.maxDuration);
-            const irsMonthlyPayment = taxedForgiveness * ((irsMonthlyRate * irsCompoundAmountFactor ) /
-                                                          (irsCompoundAmountFactor - 1));
-            const irsInterestAccrual = (irsMonthlyPayment * IRS_LOAN.maxDuration) - taxedForgiveness;
-            totals[borrower].irsSixYearLoanInterestAccrual = irsInterestAccrual.roundDecimals(2);
-            familyIRSSixYearLoanInterestAccrual = familyIRSSixYearLoanInterestAccrual + irsInterestAccrual;
-        });
-
-        // Apply remaining totals
-        const lastSimulationMonth                   = simulations[hueristicName].simulatedPayments[month];
-        totals.familyFederalTaxes                   = familyFederalTaxes.roundDecimals(2);
-        totals.familyForgiveness                    = familyForgiveness.roundDecimals(2);
-        totals.familyIRSSixYearLoanInterestAccrual  = familyIRSSixYearLoanInterestAccrual.roundDecimals(2);
-        totals.familyPaymentDuration                = month;
-        totals.familyRemainingBalance               = lastSimulationMonth.familyRemainingBalance;
-        totals.familyTotalAccruedInterest           = lastSimulationMonth.familyTotalAccruedInterest;
-        totals.familyTotalInterestWaived            = lastSimulationMonth.familyTotalInterestWaived;
-        totals.familyTotalPayments                  = (lastSimulationMonth.familyTotalPayments + familyFederalTaxes).roundDecimals(2);
-        totals.familyTotalPrincipalMatch            = lastSimulationMonth.familyTotalPrincipalMatch;
-        
-        // Update optimalHeuristics if applicable
-        borrowers.forEach(borrower => {
-            if (optimalHeuristics[borrower] === null) {
-                optimalHeuristics[borrower] = hueristicName;
-            } else {
-                const newOptimal =  simulations[optimalHeuristics[borrower]].totals.familyTotalPayments > 
-                simulations[hueristicName].totals.familyTotalPayments;
-                if (newOptimal) optimalHeuristics[borrower] = hueristicName;
-            }
-        });
+        repaymentSimulations.simulation.totals[borrower] = borrowerTotals;
     });
 
-    repaymentSimulations.simulations.optimalHeuristics = optimalHeuristics;
+    let initialFamilyMinimumPayment = 0;
+    let initialFamilyRemainingBalance = 0;
+    const monthlyTemplate = {
+        'familyMinimumPayment': 0,
+        'familyRemainingBalance': 0,
+        'familyTotalAccruedInterest': 0,
+        'familyTotalInterestWaived': 0,
+        'familyTotalOverpayment': 0,
+        'familyTotalPayments': 0,
+        'familyTotalPrincipalMatch': 0,
+        'remainingLoans': structuredClone(loans)
+    }
+    borrowers.forEach(borrower => {
+        const borrowerMonthly = {
+            'agi': basicInfo_BASE[borrower].agi,
+            'interestWaived': 0,
+            'minimumPayment': firstYearPlanEstimates_BASE[borrower][basicInfo_BASE[borrower].repaymentPlan],
+            'monthlyInterest': 0,
+            'monthlyOverpayment': basicInfo_BASE[borrower].monthlyOverpayment,
+            'monthlyPayment': 0,
+            'principalMatched': 0,
+            'remainingBalance': getBorrowerLoanSum(loans[borrower]).roundDecimals(2),
+            'totalAccruedInterest': 0,
+            'totalPayments': 0,
+            'totalInterestWaived': 0,
+            'totalPrincipalMatch': 0
+        }
+        monthlyTemplate[borrower] = borrowerMonthly;
+        initialFamilyMinimumPayment += borrowerMonthly.minimumPayment;
+        initialFamilyRemainingBalance += borrowerMonthly.remainingBalance;
+    });
+    repaymentSimulations.simulation.monthlyStatistics['0'] = structuredClone(monthlyTemplate);
+    repaymentSimulations.simulation.monthlyStatistics['0'].familyMinimumPayment = initialFamilyMinimumPayment.roundDecimals(2);
+    repaymentSimulations.simulation.monthlyStatistics['0'].familyRemainingBalance = initialFamilyRemainingBalance.roundDecimals(2);
+
+    /* -------------------- MONTHLY REPAYMENT LOOP -------------------- */
+    let year = 0;
+    let month = 0;
+    let borrowersProcessed = 0;
+    let remainingPayments = highestBorrowerRemainingPayment;
+
+    const simulation = repaymentSimulations.simulation;
+    const totals = simulation.totals;
+    const monthlyStatistics = simulation.monthlyStatistics;
+    while (remainingPayments && borrowersProcessed != borrowers.length) {
+        month++;
+        monthlyStatistics[month] = structuredClone(monthlyTemplate);
+        const thisMonthSimulation = monthlyStatistics[month];
+
+        // Anually recertify IDR - updates borrower income, overpayments and redistributes new monthly payments
+        borrowers.forEach(borrower => { borrowerOverpayments[borrower].monthlyOverpayment = basicInfo[borrower].monthlyOverpayment});
+        if (month > 12 && month % 12 === 1 ) {
+            year++;
+            borrowers.forEach(borrower => {
+                const income = basicInfo[borrower].agi;
+                const growth = basicInfo[borrower].annualGrowth / 100 + 1;
+                const newAGI = income * growth; 
+                basicInfo[borrower].agi = newAGI.roundDecimals(2);
+                
+                const borrowerOverpaymentRatio = borrowerOverpayments[borrower].ratio;
+                const newBorrowerMonthlyOverpayment = newAGI * borrowerOverpaymentRatio;
+                borrowerOverpayments[borrower].monthlyOverpayment = newBorrowerMonthlyOverpayment;
+                basicInfo[borrower].monthlyOverpayment = newBorrowerMonthlyOverpayment;
+            });
+
+            const recertification = calculateMinimumPayments(basicInfo, loans, year, firstYearPlanEstimates);;
+            borrowers.forEach(borrower => {
+                const monthlyPayment = recertification[borrower][basicInfo[borrower].repaymentPlan];
+                const borrowerLoanSum = getBorrowerLoanSum(loans[borrower]);
+                distributeMinimumPayment(loans[borrower], borrowerLoanSum, monthlyPayment);
+            })
+        }
+        
+        // Get initial loan state, then apply interest accrual followed by minimum payments
+        let familyMinimumPayment = 0;
+        const initialLoanState = {};
+        borrowers.forEach(borrower => {
+            thisMonthSimulation[borrower].agi = basicInfo[borrower].agi;
+            initialLoanState[borrower] = structuredClone(loans[borrower]);
+
+            if (totals[borrower].status === 'unpaid') {
+                let totalAccruedInterest = totals[borrower].totalAccruedInterest;
+                const borrowerAccrual = applyInterestAccrual(loans[borrower]);
+                thisMonthSimulation[borrower].monthlyInterest = borrowerAccrual.roundDecimals(2);
+                totals[borrower].totalAccruedInterest = (totalAccruedInterest + borrowerAccrual).roundDecimals(2);
+
+                let totalPayments = totals[borrower].totalPayments;
+                const borrowerMinPayment = applyMinimumPayment(loans[borrower]);
+                thisMonthSimulation[borrower].minimumPayment = borrowerMinPayment.roundDecimals(2);
+                thisMonthSimulation[borrower].monthlyPayment = thisMonthSimulation[borrower].minimumPayment;
+                totals[borrower].totalPayments = (totalPayments + borrowerMinPayment).roundDecimals(2);
+                familyMinimumPayment = (familyMinimumPayment + borrowerMinPayment).roundDecimals(2);
+            } else {
+                thisMonthSimulation[borrower].monthlyInterest = 0;
+                thisMonthSimulation[borrower].minimumPayment = 0;
+            }
+        });
+
+        // RAP interest waive then principal match using initial loan state - must be applied before overpayments
+        borrowers.forEach(borrower => {
+            if (basicInfo[borrower].repaymentPlan === 'rap') {
+                const monthlyPayment = thisMonthSimulation[borrower].monthlyPayment;
+                const monthlyInterest = thisMonthSimulation[borrower].monthlyInterest;
+                const totalAccruedInterest = totals[borrower].totalAccruedInterest;
+                const totalInterestWaived = totals[borrower].totalInterestWaived;
+
+                const waivedInterest = rapWaiveInterest(monthlyPayment, monthlyInterest, loans, borrower);
+                thisMonthSimulation[borrower].monthlyInterest = (monthlyInterest - waivedInterest).roundDecimals(2);
+                totals[borrower].totalAccruedInterest = (totalAccruedInterest - waivedInterest).roundDecimals(2);
+                thisMonthSimulation[borrower].interestWaived = waivedInterest.roundDecimals(2);
+                totals[borrower].totalInterestWaived = (totalInterestWaived + waivedInterest).roundDecimals(2);
+
+                const totalPrincipalMatch = totals[borrower].totalPrincipalMatch;
+                const principalMatch = rapPrincipalMatch(initialLoanState, monthlyPayment, loans, borrower);
+                thisMonthSimulation[borrower].principalMatch = principalMatch.roundDecimals(2);
+                totals[borrower].totalPrincipalMatch = (totalPrincipalMatch + principalMatch).roundDecimals(2);
+            }
+        });
+
+        // Apply borrower overpayments
+        let familyTotalOverpayment = 0;
+        let previousBorrowerRemainingOverpayment = 0;
+        thisMonthSimulation.overpayedLoans = [];
+        borrowers.forEach(borrower => {
+            const poolOverpaymentsEnabled = basicInfo.poolOverpayments;
+            const baseOverpayment = borrowerOverpayments[borrower].monthlyOverpayment;
+            let remainingOverpayment = baseOverpayment;
+            let additionalOverpayment = 0;
+
+            // Combine overpayments if borrower still paying and other borrower has loans and paid in full
+            const otherBorrower = borrowers.find(b => b !== borrower);
+            const thisBorrowerLoanCount = repaymentOrders[borrower].length
+            if (poolOverpaymentsEnabled && otherBorrower && thisBorrowerLoanCount > 0) {
+                const otherBorrowerLoanCount = repaymentOrders[otherBorrower].length;
+                if (otherBorrowerLoanCount === 0) {
+                    const otherBorrowerOverpayment = borrowerOverpayments[otherBorrower].monthlyOverpayment;
+                    additionalOverpayment = (previousBorrowerRemainingOverpayment) ? previousBorrowerRemainingOverpayment : otherBorrowerOverpayment;
+                    remainingOverpayment += additionalOverpayment;
+                    previousBorrowerRemainingOverpayment = 0;
+                }
+            }
+
+            while(repaymentOrders[borrower].length > 0 && remainingOverpayment > 0.01) {
+                const loanObject = repaymentOrders[borrower][0];
+                const loanID = loanObject.id;
+                const loan = loans[borrower][loanID];
+
+                if (loan === undefined || totals[borrower].status !== 'unpaid') {
+                    repaymentOrders[borrower].shift();
+                    continue;
+                }
+
+                let borrowerTotalPayments = totals[borrower].totalPayments;
+                let borrowerMonthlyPayment = thisMonthSimulation[borrower].monthlyPayment;
+                let remainingBalance = makePayment(remainingOverpayment, loan);
+                thisMonthSimulation.overpayedLoans.push(loanObject);
+
+                if (loan.principal === 0 && loan.interestAccrual === 0) {
+                    deleteLoan(loans[borrower], loanID);
+                    repaymentOrders[borrower].shift();
+                }
+
+                if (remainingBalance > 0.01) {
+                    const diff = remainingOverpayment - remainingBalance;
+                    totals[borrower].totalPayments = (borrowerTotalPayments + diff).roundDecimals(2);
+                    thisMonthSimulation[borrower].monthlyPayment = (borrowerMonthlyPayment + diff).roundDecimals(2);
+                    remainingOverpayment = remainingBalance;
+                } else {
+                    totals[borrower].totalPayments = (borrowerTotalPayments + remainingOverpayment).roundDecimals(2);
+                    thisMonthSimulation[borrower].monthlyPayment = (borrowerMonthlyPayment + remainingOverpayment).roundDecimals(2);
+                    remainingOverpayment = 0;
+                }
+            }
+
+            let appliedOverpayment = baseOverpayment + additionalOverpayment; 
+            if (remainingOverpayment > 0.01) {
+                appliedOverpayment -= remainingOverpayment;
+                if (appliedOverpayment > 0.01) previousBorrowerRemainingOverpayment = remainingOverpayment;
+            }
+
+            familyTotalOverpayment = (familyTotalOverpayment + appliedOverpayment).roundDecimals(2);
+            thisMonthSimulation[borrower].monthlyOverpayment = appliedOverpayment.roundDecimals(2);
+        });
+
+        // Update monthly values and totals
+        let familyRemainingBalance      = 0;
+        let familyTotalAccruedInterest  = 0;
+        let familyTotalInterestWaived   = 0;
+        let familyTotalPayments         = 0;
+        let familyTotalPrincipalMatch   = 0;
+        borrowers.forEach(borrower => {
+            const borrowerRemainingBalance = getBorrowerLoanSum(loans[borrower]);
+            thisMonthSimulation[borrower].remainingBalance      = borrowerRemainingBalance.roundDecimals(2);
+            thisMonthSimulation[borrower].totalAccruedInterest  = totals[borrower].totalAccruedInterest;
+            thisMonthSimulation[borrower].totalInterestWaived   = totals[borrower].totalInterestWaived;
+            thisMonthSimulation[borrower].totalPayments         = totals[borrower].totalPayments;
+            thisMonthSimulation[borrower].totalPrincipalMatch   = totals[borrower].totalPrincipalMatch;
+            
+            familyTotalAccruedInterest  = familyTotalAccruedInterest + thisMonthSimulation[borrower].totalAccruedInterest;
+            familyRemainingBalance      = familyRemainingBalance + borrowerRemainingBalance;
+            familyTotalInterestWaived   = familyTotalInterestWaived + thisMonthSimulation[borrower].totalInterestWaived;
+            familyTotalPayments         = familyTotalPayments + thisMonthSimulation[borrower].totalPayments;
+            familyTotalPrincipalMatch   = familyTotalPrincipalMatch + thisMonthSimulation[borrower].totalPrincipalMatch;
+
+            if (totals[borrower].status === 'unpaid') {
+                const paid = thisMonthSimulation[borrower].remainingBalance === 0;
+                const forgiven = month === getRemainingPayments(basicInfo, borrower);
+
+                if (paid || forgiven) {
+                    totals[borrower].status = (paid) ? 'paid' : 'forgiven';
+                    totals[borrower].paymentDuration = month;
+                    borrowersProcessed++;
+                }
+            }
+        });
+        thisMonthSimulation.familyMinimumPayment        = familyMinimumPayment.roundDecimals(2);
+        thisMonthSimulation.familyRemainingBalance      = familyRemainingBalance.roundDecimals(2);
+        thisMonthSimulation.familyTotalAccruedInterest  = familyTotalAccruedInterest.roundDecimals(2);
+        thisMonthSimulation.familyTotalInterestWaived   = familyTotalInterestWaived.roundDecimals(2);
+        thisMonthSimulation.familyTotalOverpayment      = familyTotalOverpayment.roundDecimals(2);
+        thisMonthSimulation.familyTotalPayments         = familyTotalPayments.roundDecimals(2);
+        thisMonthSimulation.familyTotalPrincipalMatch   = familyTotalPrincipalMatch.roundDecimals(2);
+        thisMonthSimulation.remainingLoans              = structuredClone(loans);
+        
+        remainingPayments--;
+    }
+
+
+    /* -------------------- POST LOOP TOTALS-------------------- */
+    // Tax bomb
+    let familyFederalTaxes                  = 0;
+    let familyForgiveness                   = 0;
+    let familyIRSSixYearLoanInterestAccrual = 0;
+    let previousBorrowerBalance             = 0;
+    let previousBorrowerForgivenessYear     = 0;
+    borrowers.forEach(borrower => {
+        const forgivenessMonth = Math.min(month, getRemainingPayments(basicInfo, borrower));
+        const forgivenessYear = Math.floor(forgivenessMonth / 12);
+        const remainingBalance = monthlyStatistics[forgivenessMonth][borrower].remainingBalance;
+        totals[borrower].remainingBalance = remainingBalance; // Need before tax calculation
+        totals[borrower].agi = basicInfo[borrower].agi;
+
+        const sameYearForgiveness = forgivenessYear === previousBorrowerForgivenessYear && totals[borrower].status === 'forgiven';
+        const taxedForgiveness = (basicInfo[borrower].pslfEligible) ? 
+                                    0 : taxBomb(basicInfo, remainingBalance, borrowers, borrower, forgivenessYear, sameYearForgiveness, previousBorrowerBalance);
+        totals[borrower].totalPayments = (totals[borrower].totalPayments + taxedForgiveness).roundDecimals(2);
+        totals.sameYearForgiveness = sameYearForgiveness;
+        totals[borrower].federalTaxes = taxedForgiveness;
+        familyFederalTaxes = familyFederalTaxes + taxedForgiveness;
+        
+        const forgiveness = remainingBalance - taxedForgiveness;
+        totals[borrower].forgiveness = forgiveness.roundDecimals(2);
+        familyForgiveness = familyForgiveness + forgiveness;
+        previousBorrowerBalance = remainingBalance;
+        previousBorrowerForgivenessYear = forgivenessYear;
+
+        const irsMonthlyRate = IRS_LOAN.rate / 12 + IRS_LOAN.monthlyPenalty;
+        const irsCompoundAmountFactor =  Math.pow((1 + irsMonthlyRate), IRS_LOAN.maxDuration);
+        const irsMonthlyPayment = taxedForgiveness * ((irsMonthlyRate * irsCompoundAmountFactor ) /
+                                                        (irsCompoundAmountFactor - 1));
+        const irsInterestAccrual = (irsMonthlyPayment * IRS_LOAN.maxDuration) - taxedForgiveness;
+        totals[borrower].irsSixYearLoanInterestAccrual = irsInterestAccrual.roundDecimals(2);
+        familyIRSSixYearLoanInterestAccrual = familyIRSSixYearLoanInterestAccrual + irsInterestAccrual;
+    });
+
+    // Apply remaining totals
+    const lastSimulationMonth                   = simulation.monthlyStatistics[month];
+    totals.familyFederalTaxes                   = familyFederalTaxes.roundDecimals(2);
+    totals.familyForgiveness                    = familyForgiveness.roundDecimals(2);
+    totals.familyIRSSixYearLoanInterestAccrual  = familyIRSSixYearLoanInterestAccrual.roundDecimals(2);
+    totals.familyPaymentDuration                = month;
+    totals.familyRemainingBalance               = lastSimulationMonth.familyRemainingBalance;
+    totals.familyTotalAccruedInterest           = lastSimulationMonth.familyTotalAccruedInterest;
+    totals.familyTotalInterestWaived            = lastSimulationMonth.familyTotalInterestWaived;
+    totals.familyTotalPayments                  = (lastSimulationMonth.familyTotalPayments + familyFederalTaxes).roundDecimals(2);
+    totals.familyTotalPrincipalMatch            = lastSimulationMonth.familyTotalPrincipalMatch;
+
     return repaymentSimulations;
     
 
@@ -1044,7 +979,7 @@ function simulateRepayment(basicInfo_BASE, loans_BASE, repaymentOrders_BASE, fir
         const loanSum = getBorrowerLoanSum(loans[borrower]);
         const borrowerLoans = loans[borrower];
         for (const loanID in borrowerLoans) {
-            const loan = borrowerLoans[loanID]
+            const loan = borrowerLoans[loanID];
             const principal = loan.principal;
             const accruedInterest = loan.interestAccrual;
             const portionToWaive = (loanSum === 0) ? 0 : (principal + accruedInterest) / loanSum;
@@ -1065,9 +1000,9 @@ function simulateRepayment(basicInfo_BASE, loans_BASE, repaymentOrders_BASE, fir
     
     function rapPrincipalMatch(initialLoanState, monthlyPayment, currentLoans, borrower) {
         const initialPrincipalSum = Object.entries(initialLoanState[borrower]).reduce((total,loan) => {
-            return total += loan[1].principal; },0)
+            return total += loan[1].principal; },0);
         const currentPrincipalSum = Object.entries(currentLoans[borrower]).reduce((total,loan) => {
-            return total += loan[1].principal; },0)
+            return total += loan[1].principal; },0);
         const principalDiff = initialPrincipalSum - currentPrincipalSum;
         const principalMatch = (principalDiff < 50) ? Math.min(50, Math.max(0, monthlyPayment - principalDiff)) : 0;
         if (principalMatch <= 0) return 0;
@@ -1083,42 +1018,43 @@ function simulateRepayment(basicInfo_BASE, loans_BASE, repaymentOrders_BASE, fir
         const actualMatch = makeMultiplePayments(matchPortions, currentLoans[borrower]);
         return actualMatch;
     }
-}
-function taxBomb(basicInfo, balance, borrowers, borrower, year, sameYearForgiveness, previousBorrowerBalance) {
-    const married = basicInfo.married;
-    const filingJointly = basicInfo.filingJointly;
-    const filingType = (filingJointly) ? 'married' : 'single';
-    const filingBorrowers = basicInfo.filingJointly ? borrowers : [borrower];
-    const agi = filingBorrowers.reduce((total, borrower) => {
-        total += basicInfo[borrower].agi; //agi already scaled with annualGrowth during monthly payment simulation
-        return total.roundDecimals(2);
-    }, 0);
-    const dependents = basicInfo.dependents;
 
-    const deductionType = (filingJointly) ? 
-        STANDARD_DEDUCTIONS.MARRIED : (married && !filingJointly) ?
-            STANDARD_DEDUCTIONS.SINGLE: (dependents > 0) ?  // MFS is technically not single but used for simplicity
-                STANDARD_DEDUCTIONS.HOH : STANDARD_DEDUCTIONS.SINGLE;
-    const growthFactor = Math.pow(CPI_U_MULTIPLIER, year);
-    const deduction = deductionType * growthFactor;
-
-    let start = Math.max(0, agi - deduction);
-    if (sameYearForgiveness) start += previousBorrowerBalance;
-    const end = start + balance;
-
-    let total = 0;
-    for (const bracket of INCOME_BRACKETS[filingType]) {
-        const min = bracket.min * growthFactor;
-        const max = bracket.max * growthFactor;
-        const rate = bracket.rate; 
-
-        if (start >= max || end <= min) continue;
-
-        const overlapMin = Math.max(start, min);
-        const overlapMax = Math.min(end, max);
-        if (overlapMax > overlapMin) {
-            total += (overlapMax - overlapMin) * rate;
+    function taxBomb(basicInfo, balance, borrowers, borrower, year, sameYearForgiveness, previousBorrowerBalance) {
+        const married = basicInfo.married;
+        const filingJointly = basicInfo.filingJointly;
+        const filingType = (filingJointly) ? 'married' : 'single';
+        const filingBorrowers = basicInfo.filingJointly ? borrowers : [borrower];
+        const agi = filingBorrowers.reduce((total, borrower) => {
+            total += basicInfo[borrower].agi; //agi already scaled with annualGrowth during monthly payment simulation
+            return total.roundDecimals(2);
+        }, 0);
+        const dependents = basicInfo.dependents;
+    
+        const deductionType = (filingJointly) ? 
+            STANDARD_DEDUCTIONS.MARRIED : (married && !filingJointly) ?
+                STANDARD_DEDUCTIONS.SINGLE: (dependents > 0) ?  // MFS is technically not single but used for simplicity
+                    STANDARD_DEDUCTIONS.HOH : STANDARD_DEDUCTIONS.SINGLE;
+        const growthFactor = Math.pow(CPI_U_MULTIPLIER, year);
+        const deduction = deductionType * growthFactor;
+    
+        let start = Math.max(0, agi - deduction);
+        if (sameYearForgiveness) start += previousBorrowerBalance;
+        const end = start + balance;
+    
+        let total = 0;
+        for (const bracket of INCOME_BRACKETS[filingType]) {
+            const min = bracket.min * growthFactor;
+            const max = bracket.max * growthFactor;
+            const rate = bracket.rate; 
+    
+            if (start >= max || end <= min) continue;
+    
+            const overlapMin = Math.max(start, min);
+            const overlapMax = Math.min(end, max);
+            if (overlapMax > overlapMin) {
+                total += (overlapMax - overlapMin) * rate;
+            }
         }
+        return total.roundDecimals(2);
     }
-    return total.roundDecimals(2);
 }

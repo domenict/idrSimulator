@@ -73,7 +73,7 @@ const monthlyOverpaymentTemplate = {
     'max': '999999999.99',
     'tooltip': {
         'ariaLabel': 'Help about monthly overpayment',
-        'text': 'A payment in addition to the monthly minimum as determined by the borrower\'s plan. The default is set for minimum monthly payments.'
+        'text': 'A payment in addition to the monthly minimum as determined by the borrower\'s plan. If enabled, loans with the highest rate loans and lowest balance will be prioritized to maximize savings.The default is set for minimum monthly payments.'
     },
     'loanField': true
 }

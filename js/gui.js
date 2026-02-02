@@ -816,13 +816,14 @@ function submitForm(event) {
             element.classList.add('animated-' + element.id);
         });
 
-        const placeholder = JSON.stringify(new Date());
+        const outputIsObject = typeof(output) === 'object';
+        const placeholder = (outputIsObject) ? JSON.stringify(new Date()) : output;
         results.textContent = placeholder;
         announce(placeholder);
 
         smoothScroll("resultsContainer");
         results.parentElement.focus();
-        if (typeof(output) === 'object') formatOutput(output); // gonna need a worker for this to keep it off the main thread
+        if (outputIsObject) formatOutput(output); // gonna need a worker for this to keep it off the main thread
     }
 }
 

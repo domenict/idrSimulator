@@ -502,7 +502,8 @@ function simulateRepayment(basicInfo_BASE, loans_BASE, repaymentOrders_BASE, fir
             const borrowerAGI = basicInfo[borrower].agi;
             borrowerOverpayments[borrower] = {
                 'monthlyOverpayment': borrowerOverPayment,
-                'ratio': (borrowerAGI > 0) ? borrowerOverPayment / borrowerAGI : 0
+                'ratio': (borrowerAGI > 0) ? borrowerOverPayment / borrowerAGI : 0,
+                'toAddToPool': 0,
             }
         } else {
             const status = (!borrowerRemainingPayments) ? 'qualified payments met' : 'no starting balance';
@@ -673,28 +674,24 @@ function simulateRepayment(basicInfo_BASE, loans_BASE, repaymentOrders_BASE, fir
             }
         });
 
+        // Determine borrower overpayment pooling
+        borrowers.forEach(borrower => {
+            const borrowerOverpayment = borrowerOverpayments[borrower].monthlyOverpayment;
+            const borrowerLoanSum = getBorrowerLoanSum(loans[borrower]);
+            if (borrowerLoanSum < borrowerOverpayment) borrowerOverpayments[borrower].toAddToPool = borrowerOverpayment - borrowerLoanSum;
+        });
+
         // Apply borrower overpayments
         let familyTotalOverpayment = 0;
-        let previousBorrowerRemainingOverpayment = 0;
         thisMonthSimulation.overpayedLoans = [];
         borrowers.forEach(borrower => {
             const poolOverpaymentsEnabled = basicInfo.poolOverpayments;
             const baseOverpayment = borrowerOverpayments[borrower].monthlyOverpayment;
-            let remainingOverpayment = baseOverpayment;
-            let additionalOverpayment = 0;
-
-            // Combine overpayments if borrower still paying and other borrower has loans and paid in full
-            const otherBorrower = borrowers.find(b => b !== borrower);
-            const thisBorrowerLoanCount = repaymentOrders[borrower].length
-            if (poolOverpaymentsEnabled && otherBorrower && thisBorrowerLoanCount > 0) {
-                const otherBorrowerLoanCount = repaymentOrders[otherBorrower].length;
-                if (otherBorrowerLoanCount === 0) {
-                    const otherBorrowerOverpayment = borrowerOverpayments[otherBorrower].monthlyOverpayment;
-                    additionalOverpayment = (previousBorrowerRemainingOverpayment) ? previousBorrowerRemainingOverpayment : otherBorrowerOverpayment;
-                    remainingOverpayment += additionalOverpayment;
-                    previousBorrowerRemainingOverpayment = 0;
-                }
-            }
+            const poolContribution = borrowers
+                .filter(b => b !== borrower)
+                .reduce((sum, b) => sum + (borrowerOverpayments[b].toAddToPool || 0), 0);
+            const totalOverpayment = poolOverpaymentsEnabled ? (baseOverpayment + poolContribution).roundDecimals(2) : baseOverpayment;
+            let remainingOverpayment = totalOverpayment;
 
             while(repaymentOrders[borrower].length > 0 && remainingOverpayment > 0.01) {
                 const loanObject = repaymentOrders[borrower][0];
@@ -728,12 +725,7 @@ function simulateRepayment(basicInfo_BASE, loans_BASE, repaymentOrders_BASE, fir
                 }
             }
 
-            let appliedOverpayment = baseOverpayment + additionalOverpayment; 
-            if (remainingOverpayment > 0.01) {
-                appliedOverpayment -= remainingOverpayment;
-                if (appliedOverpayment > 0.01) previousBorrowerRemainingOverpayment = remainingOverpayment;
-            }
-
+            let appliedOverpayment = (remainingOverpayment > 0.01) ? totalOverpayment - remainingOverpayment : totalOverpayment;
             familyTotalOverpayment = (familyTotalOverpayment + appliedOverpayment).roundDecimals(2);
             thisMonthSimulation[borrower].monthlyOverpayment = appliedOverpayment.roundDecimals(2);
         });

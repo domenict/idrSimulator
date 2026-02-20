@@ -27,6 +27,14 @@ Object.defineProperty(Number.prototype, 'numToStr', {
     enumerable: false
 });
 
+Object.defineProperty(Number.prototype, 'roundDecimals', {
+    value: function(places) {
+        const offset = Math.pow(10, places);
+        return Math.round(this * offset) / offset; 
+    },
+    enumerable: false
+});
+
 
 /* *************************************************************************************************
 ************************                      DOM LOAD                      ************************
@@ -805,26 +813,22 @@ function submitForm(event) {
     const pass = formObjectValidation(formObject);
     if (!pass) return;
 
-    const output = calculatePayments(formObject);
-    if (output !== undefined) {
-        const elements = document.getElementsByClassName('submitAnimation');
-        Array.from(elements).forEach(element => {
-            element.style.display = "flex";
-            element.classList.remove('animated-' + element.id);
-            element.offsetHeight;
-
-            element.classList.add('animated-' + element.id);
-        });
-
-        const outputIsObject = typeof(output) === 'object';
-        const placeholder = (outputIsObject) ? JSON.stringify(new Date()) : output;
-        results.textContent = placeholder;
-        announce(placeholder);
-
-        smoothScroll("resultsContainer");
-        results.parentElement.focus();
-        if (outputIsObject) formatOutput(output); // gonna need a worker for this to keep it off the main thread
+    let output = calculatePayments(formObject);
+    if (output == null || typeof(output) !== 'string') {
+        output = `There was an error processing your request.` +
+        `\nPlease refresh the page and try again.`;
     }
+    results.innerHTML = output;
+    announce(output);
+
+    const elements = document.getElementsByClassName('submitAnimation');
+    Array.from(elements).forEach(element => {
+        element.style.display = "block";
+        element.classList.remove('animated-' + element.id);
+        element.offsetHeight;
+        element.classList.add('animated-' + element.id);
+    });
+    smoothScroll("resultsContainer");
 }
 
 function moveToNext(e) {

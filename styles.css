@@ -62,6 +62,7 @@
     --font-size-sm-med:  0.9rem;    /* buttons, table header */
     --font-size-med:     0.95rem;   /* legends, labels, inputs */
     --font-size-base:    1rem;
+    --font-size-med-lg:  1.1875rem; /* h3 */
     --font-size-lg:      1.25rem;   /* h2 */
     --font-size-xl:      1.75rem;   /* h1 */
     --weight-base:       400;       /* general text */
@@ -173,6 +174,11 @@ body {
     align-items: center;
     min-height: 100vh;
 }
+
+h1 { font-size: var(--font-size-lg); }
+h2 { font-size: var(--font-size-lg); }
+h3 { font-size: var(--font-size-med-lg); }
+h4 { font-size: var(--font-size-base); }
 
 input, button, .select-trigger, label {
     font-family: inherit;
@@ -1083,10 +1089,18 @@ tr:has(.toggleLoan[data-enabled="false"]) .row-label { opacity: var(--disabled-o
 }
 
 #results{
-    padding: var(--space-5);
-    overflow-wrap: break-word;
-    word-break: break-word;
+    padding: var(--space-3);
     white-space: pre-line;
+}
+
+#results * {
+    margin: var(--space-3);
+    padding: 0;
+}
+
+#results b {
+    font-weight: 600; 
+    font-size: 0.95rem;
 }
 
 /* -------------------------------------------------
@@ -1220,6 +1234,8 @@ tr:has(.toggleLoan[data-enabled="false"]) .row-label { opacity: var(--disabled-o
     .title-header { font-size: calc(7vw * 0.8); }
     .title-header span { font-size: 7vw; }
     #disclaimer { width: 80%; }
+    #results { font-size: var(--font-size-med); }
+    #results b { font-size: calc(var(--font-size-med) * 0.95); }
 
     .field input,
     .select-trigger,
@@ -1254,12 +1270,14 @@ tr:has(.toggleLoan[data-enabled="false"]) .row-label { opacity: var(--disabled-o
     .loan-table td input { width: 100%; }
 }
 
-/* Supports recommended minimum 320px but smoother transition at 330px  */
-@media (max-width: 330px) {
+/* Resize results to support recommended minimum 320px */
+@media (max-width: 340px) {
     body { display: block; }
     .title-header { font-size: calc(var(--font-size-lg) * 0.92); }
     .title-header span { font-size: calc(var(--font-size-lg) * 1.15); }
     #disclaimer { font-size: calc(var(--font-size-sm) * 0.9); }
+    #results { font-size: var(--font-size-sm-med); }
+    #results b { font-size: calc(var(--font-size-sm-med) * 0.9); }
 
     .field input,
     .select-trigger,

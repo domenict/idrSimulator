@@ -1,147 +1,122 @@
-let lastOutput = null;
+let lastRawOutput = null;
 
 /* -------------------------------------------------
     MAIN
 ------------------------------------------------- */
 function formatOutput(rawOutput) {
     const data = structuredClone(rawOutput);
-    lastOutput = data;
-
-    const borrowers = Object.keys(data.loans);
-    let output = ``;
-    switch (borrowers.length) {
-        case 1: 
-            output = singleBorrower(borrowers, data);
-            break;
-        case 2: 
-            output = dualBorrowers(borrowers, data);
-            break;
-    }
-
+    lastRawOutput = data;
     console.log(`SIMULATED OUTPUT: ${new Date()}`);
     console.log(data);
+
+    const borrowers = Object.keys(data.loans);
+    const output = getGUIResult(borrowers, data);
     return output;
 }
+
 
 /* -------------------------------------------------
     BORROWER(S) HANDLING
 ------------------------------------------------- */
-function singleBorrower(borrowers, data) {
-    const borrower = borrowers[0];
+function getGUIResult(borrowers, data) {
     let output = `<h3>SUMMARY</h3>`;
 
-    const borrowerTotals = structuredClone(data.simulation.totals[borrower]);
-    const borrowerFirstYearEstimates = data.firstYearPlanEstimates[borrower];
-    const borrowerRepaymentOrder = data.repaymentOrders[borrower];
-    const borrowerBlurb = getBorrowerBlurb(borrower, borrowerTotals, borrowerFirstYearEstimates, borrowerRepaymentOrder);
-    output += borrowerBlurb;
-
-    output += `\n<h3>STATISTICS</h3>`;
-    const borrowerStatistics = singleBorrowerStatistics(borrower, data);
-    return output + borrowerStatistics;
-}
-
-function dualBorrowers(borrowers, data) {
-    let output = `<h3>SUMMARY</h3>`;
-
-    let borrowerNumber = 1;
+    let pslfBorrowers = 0;
     borrowers.forEach(borrower => {
         const borrowerTotals = structuredClone(data.simulation.totals[borrower]);
         const borrowerFirstYearEstimates = data.firstYearPlanEstimates[borrower];
         const borrowerRepaymentOrder = data.repaymentOrders[borrower];
-        const borrowerBlurb = getBorrowerBlurb(borrower, borrowerTotals, borrowerFirstYearEstimates, borrowerRepaymentOrder);
+
+        const borrowerBlurb = getBorrowerBlurbs(borrower, borrowerTotals, borrowerFirstYearEstimates, borrowerRepaymentOrder);
         output += borrowerBlurb;
-
-        const sameYearForgiveness = data.simulation.totals.sameYearForgiveness;
-        if (sameYearForgiveness && borrowerNumber === borrowers.length) {
-            const sameYearForgivenessBlurb = getSameYearForgivenessBlurb();
-            output += ` ${sameYearForgivenessBlurb}`;
-        }
-
-        borrowerNumber++;
+        if (data.simulation.totals[borrower].pslfEligible) pslfBorrowers++;
     });
 
+    const sameYearForgiveness = data.simulation.totals.sameYearForgiveness;
+    if (sameYearForgiveness && !pslfBorrowers) output += `<p>${getSameYearForgivenessBlurb()}</p>`;
+
     output += `\n<h3>STATISTICS</h3>`;
-    const borrowerStatistics = dualBorrowerStatistics(borrowers, data);
-    return output + borrowerStatistics;
+    const borrowerStatisticsTable = getBorrowerStatisticsTable(borrowers, data);
+    output += borrowerStatisticsTable;
+
+    output += `\n<h3>MONTHLY PAYMENT</h3>`;
+    const monthlyPaymentsTable = getMonthlyPaymentsTable(borrowers, data);
+    output += monthlyPaymentsTable;
+
+    return output;
 }
 
-function getBorrowerBlurb(borrower, borrowerTotals, borrowerFirstYearEstimates, borrowerRepaymentOrder) {
-    const { agi, 
-            annualGrowth,
-            federalTaxes, 
-            forgiveness, 
-            irsEstimate, 
+function getBorrowerBlurbs(borrower, borrowerTotals, borrowerFirstYearEstimates, borrowerRepaymentOrder) {
+    const { federalTaxes, 
             minimumPayments,
-            overPayments,
+            overpayments,
             paymentDuration, 
             repaymentPlan,
             pslfEligible, 
             remainingBalance,
-            startingBalance,
             status,
-            totalAccruedInterest,
-            totalInterestWaived,
-            totalPayments,
-            totalPrincipalMatch 
+            totalAccruedInterest
     } = borrowerTotals;
     const firstYearMinimumPayment = borrowerFirstYearEstimates[repaymentPlan];
 
     const statusBlurb = getStatusBlurb(borrower, status, paymentDuration);
-    const paymentBlurb = getPaymentBlurb(borrower, agi, annualGrowth, repaymentPlan, firstYearMinimumPayment, startingBalance, totalPayments, totalAccruedInterest, totalInterestWaived, totalPrincipalMatch);
-    const nextStepsBlurb = (status === 'paid') ?  
-        getPaymentStrategyBlurb(borrower, borrowerRepaymentOrder) : 
-        getForgivenessBlurb(borrower, federalTaxes, forgiveness, irsEstimate, pslfEligible, remainingBalance);
-    return `<p>${statusBlurb} ${paymentBlurb}` + `${(nextStepsBlurb) ? nextStepsBlurb : ''}</p>`;
+    const totalsBlurb = getTotalsBlurb(borrower, borrowerRepaymentOrder, status, minimumPayments, overpayments, totalAccruedInterest);
+    const monthlyPaymentBlurb = getMonthlyPaymentBlurb(borrower, repaymentPlan, firstYearMinimumPayment);
+    const forgivenessBlurb = (status !== 'paid') ?  getForgivenessBlurb(borrower, remainingBalance, federalTaxes, pslfEligible) : null;
+    
+    let output = `<p>${statusBlurb} ${totalsBlurb} ${monthlyPaymentBlurb}`;
+    output += `${(forgivenessBlurb)         ? ' ' + forgivenessBlurb : ''}`;
+    return output += `</p>`;
 }
 
+
 /* -------------------------------------------------
-    STATISTICS OUTPUT
+    STATISTICS TABLE
 ------------------------------------------------- */
 const statistics = {
-    'Projected Status': 'status',
-    'Loan Term': 'paymentDuration',
+    'Loan Status': 'status',
+    'Term Length': 'paymentDuration',
     'Initial Balance': 'startingBalance',
     'Interest Accrual': 'totalAccruedInterest',
     'Monthly Dues': 'minimumPayments',
     'Overpayments': 'overpayments',
     'Principal Match': 'totalPrincipalMatch',
+    'Interest Waived': 'totalInterestWaived',
     'Forgiven Amount': 'remainingBalance',
     'Estimated Taxes': 'federalTaxes',
     'Total Payment': 'totalPayments'
 }
 const requiredStatistics = ['status', 'paymentDuration', 'startingBalance', 'totalAccruedInterest', 'minimumPayments', 'totalPayments'];
 
-function singleBorrowerStatistics(borrower, data) {
-    const borrowerTotals = data.simulation.totals[borrower];
-    const statisticKeys = Object.keys(statistics);
-    let output = ``;
-
-    for (let i = 0; i < statisticKeys.length; i++) {
-        const statisticName = statisticKeys[i];
-        const key = statistics[statisticName];
-        let value = borrowerTotals[key];
-
-        if (value || requiredStatistics.indexOf(key) !== -1) {
-            if (key === 'status') (value === 'paid') ? value = 'Paid in Full' : value = 'Forgiveness';
-            if (key === 'paymentDuration') value = getYearMonthFormat(value);
-            if (key !== 'status' && key !== 'paymentDuration') value = value.toLocaleString('en-US', { style: 'currency', currency: 'USD' });
-
-            output += `<b>${statisticName.toUpperCase()}:</b>${value}`;
-            if (i < statisticKeys.length - 1) output += '\n';
-        }
-    }
-
-    return output;
-}
-
-function dualBorrowerStatistics(borrowers, data) {
+function getBorrowerStatisticsTable(borrowers, data) {
     const totals = data.simulation.totals;
     const members = structuredClone(borrowers);
-    members.push('family');
+    if (members.length > 1) members.push('family');
 
-    const statisticKeys = Object.keys(statistics);
+    const multiMemberHeader = `` +
+    `<thead>
+        <tr>
+            <th scope="col">METRIC</th>
+            <th scope="col">SELF</th>
+            <th scope="col">SPOUSE</th>
+            <th scope="col">FAMILY</th>
+        </tr>
+    </thead>`;
+    
+    return `` +
+    `<div>
+        <table>
+            ${(members.length > 1) ? multiMemberHeader : ''}
+            <tbody>
+                ${getBorrowerStatisticsRows(members, totals)}
+            </tbody>
+        </table>
+    </div>`;
+}
+
+function getBorrowerStatisticsRows(members, totals) {
     let output = ``;
+    const statisticKeys = Object.keys(statistics);
     for (let i = 0; i < statisticKeys.length; i++) {
         const statisticName = statisticKeys[i];
 
@@ -150,33 +125,91 @@ function dualBorrowerStatistics(borrowers, data) {
         for (let j = 0; j < members.length; j++) {
             const member = members[j];
             const key = (member === 'family') ? 'family' + capitalizeString(statistics[statisticName]) : statistics[statisticName];
-            if (member === 'family' && (key === 'familyStatus' || key === 'familyPaymentDuration')) continue;
+            if (member === 'family' && (key === 'familyStatus' || key === 'familyPaymentDuration')) {
+                memberTotals[member] = "N/A";
+                continue;
+            }
 
             let value = (member === 'family') ? totals[key] : totals[member][key];
             if (value > 0 ) nonZeroTotals++;
             if (key === 'status') (value === 'paid') ? value = 'Paid in Full' : value = 'Forgiveness';
             if (key === 'paymentDuration') value = getYearMonthFormat(value);
-            if (key !== 'status' && key !== 'paymentDuration') value = value.toLocaleString('en-US', { style: 'currency', currency: 'USD' });
+            if (key !== 'status' && key !== 'paymentDuration') value = convertToUSD(value);
 
             memberTotals[member] = value;
         }
         if (!nonZeroTotals && requiredStatistics.indexOf(statistics[statisticName]) === -1) continue;
 
-        const doubleSpace = `&nbsp;&nbsp;`;
-        const tab = `&nbsp;&nbsp;&nbsp;&nbsp;`;
-        output += `<h4>${doubleSpace}${statisticName.toUpperCase()}</h4>`;
+        output += `
+            <tr>
+                <th scope="row">${statisticName.toUpperCase()}</th>
+        `;
         for (const member in memberTotals) {
             const value = memberTotals[member];
-            output += `${tab + doubleSpace}<b>${member.toUpperCase()}:</b>${value}\n`;
+            output += `<td>${value}</td>`;
         }
+        output += `</tr>`;
     }
+    return output;
+}
 
+
+/* -------------------------------------------------
+    MONTHLY PAYMENT TABLE
+------------------------------------------------- */
+function getMonthlyPaymentsTable(borrowers, data) {
+    const firstYearPlanEstimates = structuredClone(data.firstYearPlanEstimates);
+    borrowers.forEach(borrower => delete firstYearPlanEstimates[borrower].std); // We want the capitalized standard plan for this only
+
+    const planHeader = `` + 
+    `<thead>
+        <tr>
+            <th scope="col">BORROWER</th>
+            <th scope="col">RAP</th>
+            <th scope="col">OLD IBR</th>
+            <th scope="col">NEW IBR</th>
+            <th scope="col">STANDARD (10 YR)</th>
+        </tr>
+    </thead>`;
+
+    return `` +
+    `<div>
+        <table>
+            ${planHeader}
+            <tbody>
+                ${getBorrowerMonthlyPaymentRows(borrowers, firstYearPlanEstimates)}
+            </tbody>
+        </table>
+    </div>`;
+}
+
+function getBorrowerMonthlyPaymentRows(borrowers, firstYearPlanEstimates) {
+    const order = ['rap','old','new','stdCapitalized'];
+
+    let output = ``;
+    borrowers.forEach(borrower => {
+        output += `
+            <tr>
+                <th scope="row">${borrower.toUpperCase()}</th>
+        `;
+        for (let i = 0; i < order.length; i++) {
+            const plan = order[i];
+            output += `<td>${firstYearPlanEstimates[borrower][plan]}</td>`;
+        }
+    });
+    
     return output;
 }
 
 /* -------------------------------------------------
     DYNAMIC SNIPPITS
 ------------------------------------------------- */
+function getRandomOutput(outputs) {
+    const numberOfPossibleOutputs = Object.keys(outputs).length;
+    const randomNumber = getRandomNumber(numberOfPossibleOutputs);
+    return outputs[randomNumber];
+}
+
 function getStatusBlurb(borrower, status, paymentDuration) {
     const { pronoun, possessiveAdj, possessivePronoun } = getBorrowerDescriptors(borrower);
     const outputs = {
@@ -185,78 +218,69 @@ function getStatusBlurb(borrower, status, paymentDuration) {
         3: `${capitalizeString(pronoun)} ${(borrower === 'self') ? 'are' : 'is'} projected to have ${(status === 'paid') ? 'no outstanding loans' : possessivePronoun + ' loans forgiven'} in ${paymentDuration} months.`,
         4: `${capitalizeString(pronoun)} ${(borrower === 'self') ? 'are' : 'is'} on track ${(status === 'paid') ? 'to satisfy ' + possessivePronoun + ' balance': 'for forgiveness'} in ${paymentDuration} months.`
     }
-
-    const numberOfPossibleOutputs = Object.keys(outputs).length;
-    const randomNumber = getRandomNumber(numberOfPossibleOutputs);
-    return outputs[randomNumber];
+    return getRandomOutput(outputs);
 }
 
-function getPaymentBlurb(borrower, agi, annualGrowth, repaymentPlan, firstYearMinimumPayment, startingBalance, totalPayments, totalAccruedInterest, totalInterestWaived, totalPrincipalMatch) {
-    const { pronoun, possessiveAdj, possessivePronoun } = getBorrowerDescriptors(borrower);
-    const planMap = { 'rap': 'RAP', 'old': 'old IBR', 'new': 'new IBR' };
-    const planName = planMap[repaymentPlan];
-
-    const withGrowthOutputs = {
-        1: ``,
-        2: ``,
-        3: ``,
-        4: ``,
-    }
-    const noGrowthOutputs = {
-        1: ``,
-        2: ``,
-        3: ``,
-        4: ``,
-    }
-
-    const outputs = (annualGrowth) ? withGrowthOutputs : noGrowthOutputs;
-    const numberOfPossibleOutputs = Object.keys(outputs).length;
-    const randomNumber = getRandomNumber(numberOfPossibleOutputs);
-    return outputs[randomNumber];
-}
-
-function getPaymentStrategyBlurb(borrower, borrowerRepaymentOrder) {
-    if (borrowerRepaymentOrder.length <= 1) return;
-    const { pronoun, possessiveAdj, possessivePronoun } = getBorrowerDescriptors(borrower);
+function getTotalsBlurb(borrower, borrowerRepaymentOrder, status, minimumPaymentsRAW, overpaymentsRAW, totalAccruedInterestRAW) {
+    const { pronoun, possessiveAdj, possessivePronoun} = getBorrowerDescriptors(borrower);
+    const totalAccruedInterest = convertToUSD(totalAccruedInterestRAW);
+    const totalPayments = convertToUSD(minimumPaymentsRAW + overpaymentsRAW);
+    const paid = (status) === 'paid';
+    const pluralLoans = (borrowerRepaymentOrder.length > 1) ? 's' : '';
 
     const outputs = {
-        1: '',
-        2: '',
-        3: '',
-        4: '',
+        1: `By the end of the repayment term, ${totalAccruedInterest} of interest will have accrued after ${totalPayments} of payments.`,
+        2: `By the time ${possessiveAdj} loan${pluralLoans} are ${(paid) ? 'paid' : 'forgiven'}, the total cost of borrowing will include ${totalAccruedInterest} in interest and ${totalPayments} in payments.`,
+        3: `Over the life of ${possessivePronoun} loan${pluralLoans}, ${pronoun} will accrue a total of ${totalAccruedInterest} in interest after making ${totalPayments} in payments.`,
+        4: `This repayment strategy involves ${totalPayments} in payments which includes ${totalAccruedInterest} of cumulative interest.`
     }
-
-    const numberOfPossibleOutputs = Object.keys(outputs).length;
-    const randomNumber = getRandomNumber(numberOfPossibleOutputs);
-    return outputs[randomNumber];
+    return getRandomOutput(outputs);
 }
 
-function getForgivenessBlurb(borrower, federalTaxes, forgiveness, irsEstimate, pslfEligible, remainingBalance) {
-    const { pronoun, possessiveAdj, possessivePronoun } = getBorrowerDescriptors(borrower);
+function getMonthlyPaymentBlurb(borrower, repaymentPlanRAW, firstYearMinimumPaymentRAW) {
+    const { possessiveAdj, possessivePronoun, } = getBorrowerDescriptors(borrower);
+    const repaymentPlan = (repaymentPlanRAW === 'rap') ? 'RAP' : (repaymentPlanRAW === 'old') ? 'Old IBR' : 'New IBR';
+    const firstYearMinimumPayment = convertToUSD(firstYearMinimumPaymentRAW);
 
     const outputs = {
-        1: '',
-        2: '',
-        3: '',
-        4: '',
+        1: `${capitalizeString(possessivePronoun)} monthly payments in ${repaymentPlan} are calculated to be ${firstYearMinimumPayment} per month.`,
+        2: `${capitalizeString(possessiveAdj)} monthly payments in ${repaymentPlan} will be approximately ${firstYearMinimumPayment} per month.`,
+        3: `Repayment in ${repaymentPlan} will begin at roughly ${firstYearMinimumPayment} per month.`,
+        4: `${(borrower === 'spouse') ? 'They should expect' : 'Expect'} to see monthly payments of roughly ${firstYearMinimumPayment} per month on ${repaymentPlan}.`
     }
+    return getRandomOutput(outputs);
+}
 
-    const numberOfPossibleOutputs = Object.keys(outputs).length;
-    const randomNumber = getRandomNumber(numberOfPossibleOutputs);
-    return outputs[randomNumber];
+function getForgivenessBlurb(borrower, remainingBalanceRAW, federalTaxesRAW, pslfEligible) {
+    const { possessiveAdj } = getBorrowerDescriptors(borrower);
+    const remainingBalance = convertToUSD(remainingBalanceRAW);
+    const federalTaxes = convertToUSD(federalTaxesRAW);
+
+    const outputsPSLF = {
+        1: `Afterwards, the remaining balance of ${remainingBalance} will be forgiven from PSLF.'`,
+        2: `After repayment is complete, ${remainingBalance} will be fully forgiven under PSLF.`,
+        3: `Following your final payment, the remaining ${remainingBalance} will be fully discharged through PSLF, leaving you with no further obligation.`,
+        4: `At the conclusion of the repayment term, PSLF requirements will be met and ${possessiveAdj} ${remainingBalance} balance will be forgiven in full.`
+    }
+    const outputsTaxed = {
+        1: `Afterwards, the remaining balance of ${remainingBalance} will incur an estimated ${federalTaxes} in federal taxes, plus any applicable state-level taxes.`,
+        2: `After repayment is complete, the remaining balance of ${remainingBalance} will be taxed roughly ${federalTaxes} excluding any potential state taxes.`,
+        3: `Following your final payment, the remaining ${remainingBalance} balance will trigger an estimated ${federalTaxes} in federal tax responsibility with additional liability if your state taxes student loan forgiveness.`,
+        4: `At the conclusion of the repayment term, a predicted ${federalTaxes} of taxes from the ${remainingBalance} remaining balance should be anticipated assuming state taxes do not apply.`
+    }
+    const outputs = (pslfEligible) ? outputsPSLF : outputsTaxed; 
+
+    return getRandomOutput(outputs);
 }
 
 function getSameYearForgivenessBlurb() {
     const outputs = {
-        1: '',
-        2: '',
-        3: '',
-        4: '',
+        1: `Please be aware that both borrowers are expected to be forgiven within the same year which can add to your tax burden.`,
+        2: `It is important to note that both balances are expected to be forgiven within the same year resulting in potentially higher taxes.`,
+        3: `Be advised that both balances may be forgiven the same year leading to compounded tax impact the following year.`,
+        4: `Keep in mind that both borrowers may be cleared in the same year and cause a larger-than-expected tax bill the following tax season.`
     }
-
-    const numberOfPossibleOutputs = Object.keys(outputs).length;
-    const randomNumber = getRandomNumber(numberOfPossibleOutputs);
-    return outputs[randomNumber];
+    return getRandomOutput(outputs);
 }
 
 /* -------------------------------------------------
@@ -272,8 +296,8 @@ function getRandomNumber(max) {
 }
 
 function getBorrowerDescriptors(borrower) {
-    const possessiveAdj = (borrower === 'self') ? 'your' : 'your spouse\'s';
     const pronoun = (borrower === 'self') ? 'you' : 'your spouse';
+    const possessiveAdj = (borrower === 'self') ? 'your' : 'your spouse\'s';
     const possessivePronoun = (borrower === 'self') ? 'your' : 'their';
     return {pronoun, possessiveAdj, possessivePronoun};
 }
@@ -288,4 +312,8 @@ function getYearMonthFormat(totalMonths) {
     if (months === 1) output = output.slice(0,-1);
 
     return output;
+}
+
+function convertToUSD(num) {
+    return num.toLocaleString('en-US', { style: 'currency', currency: 'USD' });
 }

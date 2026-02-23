@@ -5,7 +5,6 @@
 const BASE_POVERTY = { ak: 19550, hi: 17990, us: 15650 };
 const INCREMENT_POVERTY = { ak: 6880, hi: 6330, us: 5500 };
 const CPI_U_MULTIPLIER = 1.028; // "Consumer Price Index for All Urban Consumers" estimate for next 30 years
-const IRS_LOAN = { 'rate': 0.07, 'monthlyPenalty': 0.0025, 'maxDuration': 72 };
 const STANDARD_DEDUCTIONS = {
     'SINGLE'    : 16100,
     'HOH'       : 24150,
@@ -530,8 +529,6 @@ function simulateRepayment(basicInfo_BASE, loans_BASE, repaymentOrders_BASE, fir
     repaymentSimulation.simulation = { 
         'totals': {
             'familyFederalTaxes':  0,
-            'familyForgiveness': 0,
-            'familyIRSEstimate': 0,
             'familyMinimumPayments': 0,
             'familyOverpayments': 0,
             'familyPaymentDuration': 0,
@@ -550,8 +547,6 @@ function simulateRepayment(basicInfo_BASE, loans_BASE, repaymentOrders_BASE, fir
             'agi': basicInfo[borrower].agi,
             'annualGrowth': basicInfo[borrower].annualGrowth,
             'federalTaxes': 0,
-            'forgiveness': 0,
-            'irsEstimate': 0,
             'minimumPayments': 0,
             'overpayments': 0,
             'paymentDuration': 0,
@@ -785,20 +780,12 @@ function simulateRepayment(basicInfo_BASE, loans_BASE, repaymentOrders_BASE, fir
         const sameYearForgiveness = forgivenessYear === previousBorrowerForgivenessYear && totals[borrower].status === 'forgiven';
         const taxBomb = getBorrowerTaxBomb(basicInfo, remainingBalance, borrowers, borrower, forgivenessYear, sameYearForgiveness, previousBorrowerBalance);
         const taxedForgiveness = (basicInfo[borrower].pslfEligible) ? 0 : taxBomb;
-        const forgiveness = remainingBalance - taxedForgiveness;
         previousBorrowerBalance = remainingBalance;
         previousBorrowerForgivenessYear = forgivenessYear;
 
-        const irsMonthlyRate = IRS_LOAN.rate / 12 + IRS_LOAN.monthlyPenalty;
-        const irsCompoundAmountFactor =  Math.pow((1 + irsMonthlyRate), IRS_LOAN.maxDuration);
-        const irsMonthlyPayment = taxedForgiveness * ((irsMonthlyRate * irsCompoundAmountFactor ) / (irsCompoundAmountFactor - 1));
-        const irsInterestAccrual = (irsMonthlyPayment * IRS_LOAN.maxDuration) - taxedForgiveness;
-        
         // Global Borrower Totals
         totals[borrower].agi                = basicInfo[borrower].agi;
         totals[borrower].federalTaxes       = taxedForgiveness;
-        totals[borrower].forgiveness        = forgiveness;
-        totals[borrower].irsEstimate        = irsInterestAccrual;
         totals[borrower].remainingBalance   = remainingBalance;
         totals[borrower].totalPayments      += taxedForgiveness;
 
@@ -808,8 +795,6 @@ function simulateRepayment(basicInfo_BASE, loans_BASE, repaymentOrders_BASE, fir
         totals.sameYearForgiveness          = sameYearForgiveness;
         totals.familyPaymentDuration        = month;
         totals.familyFederalTaxes           += taxedForgiveness;
-        totals.familyForgiveness            += forgiveness;
-        totals.familyIRSEstimate            += irsInterestAccrual;
         totals.familyMinimumPayments        += borrowerMinimumPayments;
         totals.familyOverpayments           += borrowerOverpayments;
         totals.familyTotalPayments          += totals[borrower].totalPayments;

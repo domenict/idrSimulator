@@ -11,7 +11,16 @@ function formatOutput(rawOutput) {
 
     const borrowers = Object.keys(data.loans);
     const output = getGUIResult(borrowers, data);
-    return output;
+
+    const formattedOutput = html_beautify(output, {
+        indent_size: 4,
+        indent_level: 3,
+        indent_char: ' ',
+        max_preserve_newlines: 0,
+        preserve_newlines: false,
+        wrap_line_length: 0
+    });
+    return formattedOutput;
 }
 
 
@@ -35,11 +44,11 @@ function getGUIResult(borrowers, data) {
     const sameYearForgiveness = data.simulation.totals.sameYearForgiveness;
     if (sameYearForgiveness && !pslfBorrowers) output += `<p>${getSameYearForgivenessBlurb()}</p>`;
 
-    output += `\n<h3>STATISTICS</h3>`;
+    output += `<h3>STATISTICS</h3>`;
     const borrowerStatisticsTable = getBorrowerStatisticsTable(borrowers, data);
     output += borrowerStatisticsTable;
 
-    output += `\n<h3>MONTHLY PAYMENT</h3>`;
+    output += `<h3>MONTHLY PAYMENT</h3>`;
     const monthlyPaymentsTable = getMonthlyPaymentsTable(borrowers, data);
     output += monthlyPaymentsTable;
 
@@ -75,10 +84,10 @@ function getBorrowerBlurbs(borrower, borrowerTotals, borrowerFirstYearEstimates,
 ------------------------------------------------- */
 const statistics = {
     'Loan Status': 'status',
-    'Term Length': 'paymentDuration',
+    'Term End': 'paymentDuration',
     'Initial Balance': 'startingBalance',
     'Interest Accrual': 'totalAccruedInterest',
-    'Monthly Dues': 'minimumPayments',
+    'Minimum Payments': 'minimumPayments',
     'Overpayments': 'overpayments',
     'Principal Match': 'totalPrincipalMatch',
     'Interest Waived': 'totalInterestWaived',
@@ -104,8 +113,8 @@ function getBorrowerStatisticsTable(borrowers, data) {
     </thead>`;
     
     return `` +
-    `<div>
-        <table>
+    `<div class="result-table-wrapper">
+        <table class="result-table result-statistics-table">
             ${(members.length > 1) ? multiMemberHeader : ''}
             <tbody>
                 ${getBorrowerStatisticsRows(members, totals)}
@@ -133,7 +142,7 @@ function getBorrowerStatisticsRows(members, totals) {
             let value = (member === 'family') ? totals[key] : totals[member][key];
             if (value > 0 ) nonZeroTotals++;
             if (key === 'status') (value === 'paid') ? value = 'Paid in Full' : value = 'Forgiveness';
-            if (key === 'paymentDuration') value = getYearMonthFormat(value);
+            if (key === 'paymentDuration') value = getEndDate(value);
             if (key !== 'status' && key !== 'paymentDuration') value = convertToUSD(value);
 
             memberTotals[member] = value;
@@ -146,7 +155,7 @@ function getBorrowerStatisticsRows(members, totals) {
         `;
         for (const member in memberTotals) {
             const value = memberTotals[member];
-            output += `<td>${value}</td>`;
+            output += `<td data-label="${member.toUpperCase()}">${value}</td>`;
         }
         output += `</tr>`;
     }
@@ -164,17 +173,17 @@ function getMonthlyPaymentsTable(borrowers, data) {
     const planHeader = `` + 
     `<thead>
         <tr>
-            <th scope="col">BORROWER</th>
+            ${(borrowers.length > 1) ? `<th scope="col">BORROWER</th>`: ``}
             <th scope="col">RAP</th>
             <th scope="col">OLD IBR</th>
             <th scope="col">NEW IBR</th>
-            <th scope="col">STANDARD (10 YR)</th>
+            <th scope="col">STANDARD<br>(10 YEAR)</th>
         </tr>
     </thead>`;
 
     return `` +
-    `<div>
-        <table>
+    `<div class="result-table-wrapper">
+        <table class="result-table result-monthlyPayment-table">
             ${planHeader}
             <tbody>
                 ${getBorrowerMonthlyPaymentRows(borrowers, firstYearPlanEstimates)}
@@ -185,16 +194,22 @@ function getMonthlyPaymentsTable(borrowers, data) {
 
 function getBorrowerMonthlyPaymentRows(borrowers, firstYearPlanEstimates) {
     const order = ['rap','old','new','stdCapitalized'];
+    const planHeaders = ['RAP','OLD IBR','NEW IBR','STD (10 YR)']
 
     let output = ``;
     borrowers.forEach(borrower => {
-        output += `
-            <tr>
-                <th scope="row">${borrower.toUpperCase()}</th>
-        `;
+        if (borrowers.length > 1) {
+            output += `
+                <tr>
+                    <th scope="row">${borrower.toUpperCase()}</th>
+            `;
+        }
+
         for (let i = 0; i < order.length; i++) {
             const plan = order[i];
-            output += `<td>${firstYearPlanEstimates[borrower][plan]}</td>`;
+            const planHeader = planHeaders[i];
+            const amount = convertToUSD(firstYearPlanEstimates[borrower][plan]);
+            output += `<td data-label="${planHeader}">${amount}</td>`;
         }
     });
     
@@ -243,7 +258,7 @@ function getMonthlyPaymentBlurb(borrower, repaymentPlanRAW, firstYearMinimumPaym
     const firstYearMinimumPayment = convertToUSD(firstYearMinimumPaymentRAW);
 
     const outputs = {
-        1: `${capitalizeString(possessivePronoun)} monthly payments in ${repaymentPlan} are calculated to be ${firstYearMinimumPayment} per month.`,
+        1: `${capitalizeString(possessivePronoun)} monthly payment in ${repaymentPlan} is calculated to be ${firstYearMinimumPayment} per month.`,
         2: `${capitalizeString(possessiveAdj)} monthly payments in ${repaymentPlan} will be approximately ${firstYearMinimumPayment} per month.`,
         3: `Repayment in ${repaymentPlan} will begin at roughly ${firstYearMinimumPayment} per month.`,
         4: `${(borrower === 'spouse') ? 'They should expect' : 'Expect'} to see monthly payments of roughly ${firstYearMinimumPayment} per month on ${repaymentPlan}.`
@@ -252,20 +267,20 @@ function getMonthlyPaymentBlurb(borrower, repaymentPlanRAW, firstYearMinimumPaym
 }
 
 function getForgivenessBlurb(borrower, remainingBalanceRAW, federalTaxesRAW, pslfEligible) {
-    const { possessiveAdj } = getBorrowerDescriptors(borrower);
+    const { pronoun, possessiveAdj } = getBorrowerDescriptors(borrower);
     const remainingBalance = convertToUSD(remainingBalanceRAW);
     const federalTaxes = convertToUSD(federalTaxesRAW);
 
     const outputsPSLF = {
         1: `Afterwards, the remaining balance of ${remainingBalance} will be forgiven from PSLF.'`,
         2: `After repayment is complete, ${remainingBalance} will be fully forgiven under PSLF.`,
-        3: `Following your final payment, the remaining ${remainingBalance} will be fully discharged through PSLF, leaving you with no further obligation.`,
+        3: `Following ${possessiveAdj} final payment, the remaining ${remainingBalance} will be fully discharged through PSLF, leaving ${pronoun} with no further obligation.`,
         4: `At the conclusion of the repayment term, PSLF requirements will be met and ${possessiveAdj} ${remainingBalance} balance will be forgiven in full.`
     }
     const outputsTaxed = {
         1: `Afterwards, the remaining balance of ${remainingBalance} will incur an estimated ${federalTaxes} in federal taxes, plus any applicable state-level taxes.`,
         2: `After repayment is complete, the remaining balance of ${remainingBalance} will be taxed roughly ${federalTaxes} excluding any potential state taxes.`,
-        3: `Following your final payment, the remaining ${remainingBalance} balance will trigger an estimated ${federalTaxes} in federal tax responsibility with additional liability if your state taxes student loan forgiveness.`,
+        3: `Following ${possessiveAdj} final payment, the remaining ${remainingBalance} balance will trigger an estimated ${federalTaxes} in federal tax responsibility with additional liability if ${possessiveAdj} state taxes student loan forgiveness.`,
         4: `At the conclusion of the repayment term, a predicted ${federalTaxes} of taxes from the ${remainingBalance} remaining balance should be anticipated assuming state taxes do not apply.`
     }
     const outputs = (pslfEligible) ? outputsPSLF : outputsTaxed; 
@@ -278,7 +293,7 @@ function getSameYearForgivenessBlurb() {
         1: `Please be aware that both borrowers are expected to be forgiven within the same year which can add to your tax burden.`,
         2: `It is important to note that both balances are expected to be forgiven within the same year resulting in potentially higher taxes.`,
         3: `Be advised that both balances may be forgiven the same year leading to compounded tax impact the following year.`,
-        4: `Keep in mind that both borrowers may be cleared in the same year and cause a larger-than-expected tax bill the following tax season.`
+        4: `Keep in mind that both borrowers may be cleared of liability in the same year and cause a larger-than-expected tax bill the following tax season.`
     }
     return getRandomOutput(outputs);
 }
@@ -302,18 +317,14 @@ function getBorrowerDescriptors(borrower) {
     return {pronoun, possessiveAdj, possessivePronoun};
 }
 
-function getYearMonthFormat(totalMonths) {
-    const years = Math.floor(totalMonths/12);
-    const months = totalMonths - Math.floor(totalMonths/12) * 12;
+function getEndDate(totalMonths) {
+    const date = new Date();
+    date.setMonth(date.getMonth() + totalMonths);
 
-    let output = '';
-    if (years) output += years + ' years ';
-    output += months + ' months';
-    if (months === 1) output = output.slice(0,-1);
-
-    return output;
+    const options = { month: 'long', year: 'numeric' };
+    return date.toLocaleDateString('en-US', options) // "February 2031"
 }
 
 function convertToUSD(num) {
-    return num.toLocaleString('en-US', { style: 'currency', currency: 'USD' });
+    return Math.floor(num + 0.49).toLocaleString('en-US', { style: 'currency', currency: 'USD' }).split(".")[0];
 }

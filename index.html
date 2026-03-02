@@ -1,0 +1,128 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1">
+    <title>Income-Driven Repayment Simulator</title>
+    <meta name="description" content="Income-Driven Repayment Simulator">
+    
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Montserrat:ital,wght@0,100..900;1,100..900&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="styles.css">
+
+    <script defer src="js/dependencies/beautify.min.js"></script>
+    <script defer src="js/dependencies/beautify-html.min.js"></script>
+    <script defer src="js/dependencies/argon2-bundled.min.js"></script>
+    <script defer src="js/formatOutput.js"></script>
+    <script defer src="js/calculatePayments.js"></script>
+    <script defer src="js/buildHTML.js"></script>
+    <script defer src="js/gui.js"></script>
+</head>
+<body>
+<div id="initial-loader">
+    <p class="loader-text">This tools relies on scripts to operate.</p>
+    <p class="loader-text">Please enable scripts and refresh the page.</p>
+</div>
+
+<div id="overlay" role="dialog" aria-modal="true" aria-labelledby="modal-header">
+    <div id="spinner">
+        <svg viewBox="0 0 50 50" xmlns="http://www.w3.org/2000/svg">
+            <defs>
+                <linearGradient id="spinner-grad" x1="8.042%" y1="0%" x2="65.682%" y2="23.865%">
+                    <stop stop-color="#fff" stop-opacity="0" offset="0%"/>
+                    <stop stop-color="#fff" stop-opacity=".631" offset="63.146%"/>
+                    <stop stop-color="#fff" offset="100%"/>
+                </linearGradient>
+            </defs>
+            <g fill="none" fill-rule="evenodd">
+                <g transform="translate(1.33 1.33) scale(1.315)">
+                    <path d="M36 18c0-9.94-8.06-18-18-18" stroke="url(#spinner-grad)" stroke-width="2"/>
+                </g>
+            </g>
+        </svg>
+    </div>
+    <div id="modal">
+        <h2 id="modal-header">Select Option</h2>
+        <p id="modal-text"></p>
+        <div id="modal-input-wrapper">
+            <input id="modal-passphrase-input" type="password" class="passphrase-input" placeholder="Passphrase" aria-label="Enter a passphrase"/>
+            <button id="modal-show-hide-toggle" aria-pressed="false">Show</button>
+        </div>
+        <div id="modal-capslock-warning">Caps Lock is on</div>
+        <div>
+            <button id="modal-accept-btn" class="modal-button">Accept</button>
+            <button id="modal-reject-btn" class="modal-button">Reject</button>
+        </div>
+    </div>
+    <div id="modal-confirmation"></div>
+</div>
+
+<div id="page-wrapper">
+    <div id="title">
+        <div class="title-header-wrapper">
+            <h1 class="title-header" aria-label="Income-Driven Repayment Simulator"><span>I</span>NCOME-<span>D</span>RIVEN <span>R</span>EPAYMENT <span>S</span>IMULATOR</h1>
+        </div>
+        <div class="top-buttons">
+            <button type="button" id="saveToStorage" aria-label="Save current session to browser">Save</button>
+            <button type="button" id="themeToggle" role="switch" aria-checked="false" aria-label="Switch to dark mode">
+                <svg class="icon-sun" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                    <circle cx="12" cy="12" r="5" stroke="currentColor" stroke-width="1.2"/>
+                    <path d="M12 1v2m0 18v2M4.22 4.22l1.42 1.42M18.36 18.36l1.42 1.42M1 12h2m18 0h2M4.22 19.78l1.42-1.42M18.36 5.64l1.42-1.42"
+                        stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
+                </svg>
+                <svg class="icon-moon" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                    <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"
+                        stroke="currentColor" stroke-width="1.2"/>
+                </svg>
+            </button>
+            <button type="button" id="deleteStorage" aria-label="Permanently delete saved and current session">Delete</button> 
+        </div>
+    </div>
+
+    <main>
+        <!-- SVG symbols (kept hidden) -->
+        <svg style="display: none;">
+            <symbol id="help-hover" viewBox="0 0 1024 1024">
+                <path fill="currentColor" d="M464 784.352c0 26.51 21.49 48 48 48s48-21.49 48-48-21.49-48-48-48-48 21.49-48 48z"  />
+                <path fill="currentColor" d="M512 960C264.96 960 64 759.04 64 512S264.96 64 512 64s448 200.96 448 448-200.96 448-448 448z m0-831.713c-211.584 0-383.713 172.129-383.713 383.713 0 211.552 172.129 383.713 383.713 383.713 211.552 0 383.713-172.16 383.713-383.713 0-211.584-172.161-383.713-383.713-383.713z"  />
+                <path fill="currentColor" d="M512 673.695c-17.665 0-32-14.336-32-31.999v-54.112c0-52.353 39.999-92.352 75.327-127.648 25.887-25.92 52.672-52.672 52.672-74.016 0-53.344-43.072-96.736-95.999-96.736-53.823 0-96 41.536-96 94.56 0 17.664-14.335 31.999-32 31.999s-32-14.336-32-32c0-87.423 71.774-158.559 160-158.559S672 297.28 672 385.92c0 47.904-36.32 84.191-71.424 119.296-27.84 27.776-56.575 56.512-56.575 82.335v54.112c0 17.665-14.336 32.032-32.001 32.032z"/>
+            </symbol>
+        </svg>
+
+        <form id="calcForm" novalidate>
+            <!-- ==================== SELF ==================== -->
+            <section id="selfSection" aria-labelledby="self-heading">
+                <!-- TEMPLATES VIA JS-->
+            </section>
+
+            <!-- ==================== FAMILY INFO ==================== -->
+            <section id="familySection" class="hideAllSpouse" aria-labelledby="family-heading">
+                <!-- TEMPLATES VIA JS-->
+            </section>
+
+            <!-- ==================== SPOUSE (hidden by default) ==================== -->
+            <section id="spouseSection" class="hideAllSpouse" aria-labelledby="spouse-heading">
+                <!-- TEMPLATES VIA JS-->
+            </section>
+
+            <!-- ==================== DISCLAIMER/SUBMISSION ==================== -->
+            <div id="disclaimer">
+                <small>
+                    Projections based on 2026 poverty line guidelines and IDR plans.
+                    Actuals may vary due to policy and life-changing events.
+                    This tool does not support private student loans and is
+                    not a replacement for professional guidance.
+                </small>
+            </div>
+            <button id="submitForm" type="submit" aria-label="Calculate repayment projections">Submit</button>
+        </form>
+    </main>
+    <section role="region" aria-live="polite" aria-labelledby="results" id="resultsContainer" class="animated-resultsContainer submitAnimation" tabindex="0">
+        <div id="results" class="animated-results submitAnimation" tabindex="-1"></div>
+    </section>
+</div>
+<div id="spacer" aria-hidden="true"></div>
+<div aria-live="polite" aria-atomic="true" class="sr-only" id="live-announcements"></div>
+</body>
+</html>

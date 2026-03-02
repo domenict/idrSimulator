@@ -1155,7 +1155,7 @@ tr:has(.toggleLoan[data-enabled="false"]) .row-label { opacity: var(--disabled-o
     padding: 0;
 }
 
-#results h3 { margin-top: var(--space-7)}
+#results h3 { margin: var(--space-7) 0 var(--space-3) 0 }
 
 /* -------------------------------------------------
     ANIMATIONS AND CLASSES
@@ -1197,10 +1197,9 @@ tr:has(.toggleLoan[data-enabled="false"]) .row-label { opacity: var(--disabled-o
 ------------------------------------------------- */
 /* Max width with which the page was designed */
 @media (max-width: 720px) {
-    #radios { grid-template-columns: 1fr; gap: var(--space-4); }
+    #radios { grid-template-columns: 1fr; }
     .radio-group { margin-top: calc(var(--space-1) * -1); }
-    section { gap: var(--space-4); }
-    .row-2, .row-3 { grid-template-columns: 1fr; gap: var(--space-4); }
+    .row-2, .row-3 { grid-template-columns: 1fr; }
 
     .loan-table,
     .loan-table tbody,
@@ -1214,11 +1213,20 @@ tr:has(.toggleLoan[data-enabled="false"]) .row-label { opacity: var(--disabled-o
     .loan-table thead { display: none; }
     .loan-table tbody { padding: var(--space-3); }
 
+    .loan-table tbody tr {
+        margin-bottom: var(--space-3);
+        border: var(--border-input);
+        border-radius: var(--radius-md);
+    }
+
+    .loan-table tbody tr:last-child { margin-bottom: 0; }
+
     .loan-table td {
         display: flex;
         justify-content: stretch;
         align-items: center;
-        padding: var(--space-1) 0;
+        padding: var(--space-2) 0 0 0;
+        margin: 0 calc(var(--space-3) * -1);
         gap: var(--space-3);
         text-align: center;
         flex-wrap: nowrap;
@@ -1226,9 +1234,13 @@ tr:has(.toggleLoan[data-enabled="false"]) .row-label { opacity: var(--disabled-o
 
     .loan-table td.row-label {
         order: -1;
-        justify-content: flex-start;
+        justify-content: center;
         padding: 0;
-        margin-bottom: calc(var(--space-2) * -1);
+        border-bottom: var(--border-input);
+        background-color: var(--color-bg-table-head);
+        border-radius: var(--radius-md) var(--radius-md) 0 0;
+        overflow: hidden;
+        margin: 0 0 var(--space-2) 0;
     }
 
     .loan-table td.row-label span {
@@ -1238,7 +1250,6 @@ tr:has(.toggleLoan[data-enabled="false"]) .row-label { opacity: var(--disabled-o
     }
 
     .loan-table td input { flex: 1; }
-
     .loan-table td:nth-child(2)::before { content: "Principal Amount: "; transition: opacity var(--trans-fast); }
     .loan-table td:nth-child(3)::before { content: "Accrued Interest: "; transition: opacity var(--trans-fast); }
     .loan-table td:nth-child(4)::before { content: "Interest Rate: "; transition: opacity var(--trans-fast); }
@@ -1264,7 +1275,7 @@ tr:has(.toggleLoan[data-enabled="false"]) .row-label { opacity: var(--disabled-o
     .loan-table td.btn-cell {
         width: 100%;
         margin: var(--space-3) 0;
-        padding: 0 var(--space-2);
+        padding: 0 var(--space-4);
         gap: var(--space-3);
     }
 
@@ -1274,108 +1285,79 @@ tr:has(.toggleLoan[data-enabled="false"]) .row-label { opacity: var(--disabled-o
         flex: 1;
         text-align: center;
     }
-}
 
-/* Point at which result tables break */
-@media (max-width: 600px) {
     .result-table, 
     .result-table tbody, 
     .result-table tr, 
     .result-table th, 
     .result-table td { 
         display: block; 
-        border: none !important;
-        border-radius: 0 !important;
+        border: none;
+        border-radius: 0;
+        overflow: hidden;
     }
 
     .result-table thead { display: none; }
+    .result-table tr:last-child { border: var(--border-input); }
+    .result-table tr:last-child td { border-top: var(--border-input); }
+    .result-table tr td:last-child { border-bottom: none; }
 
     .result-table tbody tr {
         width: calc(100% - (var(--space-3) * 2));
         margin: var(--space-3) auto;
-        border: var(--border-input) !important;
-        border-radius: var(--radius-md) !important;
-        overflow: hidden;
-        padding-bottom: var(--space-2);
+        border: var(--border-input);
+        border-radius: var(--radius-md);
     }
 
     .result-table tbody th {
         background-color: var(--color-bg-table-head);
         padding: var(--space-2);
-        text-align: center;
-        border-bottom: var(--border-input) !important;
+        border-bottom: var(--border-input);
         font-weight: var(--weight-bold);
     }
 
     .result-table td {
-        display: flex;
-        align-items: flex-start; 
-        gap: var(--space-3);
-        padding: var(--space-2) var(--space-4);
+        display: grid;
+        border-bottom: var(--border-input);
+        align-items: center;
+        text-align: center; 
+        padding: 0;
+        white-space: pre-line;
     }
 
+    .result-statistics-table td { grid-template-columns: 45% 55%;}
+    .result-monthlyPayment-table td { grid-template-columns: 55% 45%;}
+
     .result-table td:not(:only-of-type)::before {
-        content: attr(data-label) ":";
+        content: attr(data-label);
         font-weight: var(--weight-bold);
-        flex-shrink: 0;
-        text-align: left;
-        justify-content: center;
-        white-space: pre;
+        border-right: var(--border-input);
+        padding: var(--space-2);
     }
 
     .result-statistics-table td:not(:only-of-type)::before { min-width: calc(var(--space-5) * 4.25); }
     .result-monthlyPayment-table td:not(:only-of-type)::before { min-width: calc(var(--space-5) * 5.5); }
 
-    .result-table tbody td:first-of-type { padding-top: var(--space-3); }
-    .result-table td { text-align: left; }
-    .result-table td:only-of-type::before { display: none; }
-
     .result-table td:only-of-type {
+        display: flex;
         justify-content: center;
-        text-align: center;
+        padding: var(--space-2);
     }
 
     .result-monthlyPayment-table tbody tr:only-child {
         display: block;
         width: 100%;
         margin: 0;
-        border: none !important;
-        border-radius: 0;
-        padding-bottom: 0 !important;
-    }
-
-    .result-monthlyPayment-table tbody tr:only-child th[scope="row"] {
-        display: block;
-        background-color: var(--color-bg-table-head);
-    }
-
-    .result-monthlyPayment-table tbody tr:only-child td {
-        display: grid;
-        grid-template-columns: 50% 50%;
-        padding: 0;
-        border-bottom: var(--border-input) !important;
-        align-items: center;
-        text-align: center; 
-        gap: 0;
-        text-indent: 0;
+        border: none;
     }
 
     .result-monthlyPayment-table tbody tr:only-child td::before {
-        content: attr(data-label) ;
+        content: attr(data-label);
         background-color: var(--color-bg-table-head);
-        padding: var(--space-2);
-        font-weight: var(--weight-bold);
-        border-right: var(--border-input);
-        height: 100%;
-        display: flex;
-        justify-content: center;
-        align-items: center;
-        text-align: center;
     }
 
-    .result-monthlyPayment-table tbody tr:only-child td:last-child { border-bottom: none !important; }
+    .result-monthlyPayment-table tbody tr:only-child td:first-child { border-top: none; }
 }
-
 
 /* Point at which title header changes format */
 @media (max-width: 570px) {
@@ -1385,9 +1367,9 @@ tr:has(.toggleLoan[data-enabled="false"]) .row-label { opacity: var(--disabled-o
 
 /* Point at which loan row labels start breaking */
 @media (max-width: 430px) {
-    .title-header-wrapper { width: 100%; }
-    .title-header { font-size: calc(7vw * 0.8); }
-    .title-header span { font-size: 7vw; }
+    .title-header-wrapper { width: 85%; }
+    .title-header { font-size: calc(6.5vw * 0.8); }
+    .title-header span { font-size: 6.5vw; }
     #disclaimer { width: 80%; }
     #results { font-size: var(--font-size-med); }
     .result-table tbody th { font-size: calc(var(--font-size-med) * 0.95); }
@@ -1419,7 +1401,8 @@ tr:has(.toggleLoan[data-enabled="false"]) .row-label { opacity: var(--disabled-o
         align-items: flex-start;
         text-align: left;
         gap: var(--space-2);
-        margin-top: var(--space-3);
+        margin-top: var(--space-2);
+        padding-left: var(--space-5);
     }
 
     .loan-table td input { width: 100%; }
@@ -1428,8 +1411,9 @@ tr:has(.toggleLoan[data-enabled="false"]) .row-label { opacity: var(--disabled-o
 /* Resize results to support recommended minimum 320px */
 @media (max-width: 340px) {
     body { display: block; }
-    .title-header { font-size: calc(var(--font-size-lg) * 0.92); }
-    .title-header span { font-size: calc(var(--font-size-lg) * 1.15); }
+
+    .title-header { font-size: calc(var(--font-size-lg) * 0.88); }
+    .title-header span { font-size: calc(var(--font-size-lg) * 1.10); }
     #disclaimer { font-size: calc(var(--font-size-sm) * 0.9); }
     #results { font-size: var(--font-size-sm-med); }
     .result-table tbody th { font-size: calc(var(--font-size-sm-med) * 0.95); }

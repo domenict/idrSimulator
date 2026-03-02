@@ -1,11 +1,12 @@
-let lastRawOutput = null;
+let lastRawData = null;
+let lastFormattedOutput = null;
 
 /* -------------------------------------------------
     MAIN
 ------------------------------------------------- */
-function formatOutput(rawOutput) {
-    const data = structuredClone(rawOutput);
-    lastRawOutput = data;
+function formatOutput(rawData) {
+    const data = structuredClone(rawData);
+    lastRawData = data;
     console.log(`SIMULATED OUTPUT: ${new Date()}`);
     console.log(data);
 
@@ -20,6 +21,8 @@ function formatOutput(rawOutput) {
         preserve_newlines: false,
         wrap_line_length: 0
     });
+    lastFormattedOutput = formattedOutput;
+
     return formattedOutput;
 }
 
@@ -166,25 +169,37 @@ function getBorrowerStatisticsRows(members, totals) {
 /* -------------------------------------------------
     MONTHLY PAYMENT TABLE
 ------------------------------------------------- */
+function getPlanHeaderArray() {
+    return [ {'rap':'RAP'}, {'old':'OLD IBR'}, {'new':'NEW IBR'}, {'stdCapitalized':`STANDARD<br>(10 YEAR)`} ];
+}
+
+function getPlanHeader(borrowers) {
+    const planHeaderArr = getPlanHeaderArray();
+    const planHeaderKeys = planHeaderArr.flatMap(obj => Object.keys(obj));
+    
+    let headers = ``;
+    for (let i = 0; i < planHeaderKeys.length; i++) {
+        const header = planHeaderArr[i][planHeaderKeys[i]];
+        headers += `<th scope="col">${header}</th>`;
+    }
+
+    return `` + 
+    `<thead>
+        <tr>
+            ${(borrowers.length > 1) ? `<th scope="col">BORROWER</th>`: ``}
+            ${headers}
+        </tr>
+    </thead>`;
+}
+
 function getMonthlyPaymentsTable(borrowers, data) {
     const firstYearPlanEstimates = structuredClone(data.firstYearPlanEstimates);
     borrowers.forEach(borrower => delete firstYearPlanEstimates[borrower].std); // We want the capitalized standard plan for this only
 
-    const planHeader = `` + 
-    `<thead>
-        <tr>
-            ${(borrowers.length > 1) ? `<th scope="col">BORROWER</th>`: ``}
-            <th scope="col">RAP</th>
-            <th scope="col">OLD IBR</th>
-            <th scope="col">NEW IBR</th>
-            <th scope="col">STANDARD<br>(10 YEAR)</th>
-        </tr>
-    </thead>`;
-
     return `` +
     `<div class="result-table-wrapper">
         <table class="result-table result-monthlyPayment-table">
-            ${planHeader}
+            ${getPlanHeader(borrowers)}
             <tbody>
                 ${getBorrowerMonthlyPaymentRows(borrowers, firstYearPlanEstimates)}
             </tbody>
@@ -193,8 +208,8 @@ function getMonthlyPaymentsTable(borrowers, data) {
 }
 
 function getBorrowerMonthlyPaymentRows(borrowers, firstYearPlanEstimates) {
-    const order = ['rap','old','new','stdCapitalized'];
-    const planHeaders = ['RAP','OLD IBR','NEW IBR','STD (10 YR)']
+    const planHeaderArr = getPlanHeaderArray();
+    const planHeaderKeys = planHeaderArr.flatMap(obj => Object.keys(obj));
 
     let output = ``;
     borrowers.forEach(borrower => {
@@ -205,11 +220,11 @@ function getBorrowerMonthlyPaymentRows(borrowers, firstYearPlanEstimates) {
             `;
         }
 
-        for (let i = 0; i < order.length; i++) {
-            const plan = order[i];
-            const planHeader = planHeaders[i];
+        for (let i = 0; i < planHeaderKeys.length; i++) {
+            const plan = planHeaderKeys[i];
+            const header = planHeaderArr[i][plan].replace(/<br\s*\/?>/gi, '\n');
             const amount = convertToUSD(firstYearPlanEstimates[borrower][plan]);
-            output += `<td data-label="${planHeader}">${amount}</td>`;
+            output += `<td data-label="${header}">${amount}</td>`;
         }
     });
     
@@ -244,7 +259,7 @@ function getTotalsBlurb(borrower, borrowerRepaymentOrder, status, minimumPayment
     const pluralLoans = (borrowerRepaymentOrder.length > 1) ? 's' : '';
 
     const outputs = {
-        1: `By the end of the repayment term, ${totalAccruedInterest} of interest will have accrued after ${totalPayments} of payments.`,
+        1: `By the end of the repayment term, about ${totalAccruedInterest} of interest will have accrued after ${totalPayments} of payments.`,
         2: `By the time ${possessiveAdj} loan${pluralLoans} are ${(paid) ? 'paid' : 'forgiven'}, the total cost of borrowing will include ${totalAccruedInterest} in interest and ${totalPayments} in payments.`,
         3: `Over the life of ${possessivePronoun} loan${pluralLoans}, ${pronoun} will accrue a total of ${totalAccruedInterest} in interest after making ${totalPayments} in payments.`,
         4: `This repayment strategy involves ${totalPayments} in payments which includes ${totalAccruedInterest} of cumulative interest.`

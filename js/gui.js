@@ -85,6 +85,7 @@ function toggleTheme() {
 
     const button = document.getElementById('themeToggle');
     button.setAttribute('aria-label', isDark ? 'Switch to light mode' : 'Switch to dark mode');
+    button.blur();
 }
 function delayTransition(fromLoad) {
     const overlay = document.getElementById("overlay");
@@ -804,6 +805,9 @@ function createCryptoWorker() {
 
 // Sumission form to ./backEnd.js
 function submitForm(event) {
+    const button = document.getElementById("submitForm");
+    button.blur();
+
     event.preventDefault();
     const results = document.getElementById('results');
     const form = document.getElementById("calcForm");
@@ -1677,6 +1681,7 @@ function focusTooltip(e) {
 // Helper for add/loan event delegation
 function handleLoanButtonClick(e) {
     const btn = e.target.closest('.addLoan, .deleteLoan, .toggleLoan');
+    btn.blur();
     if (!btn || !document.body.contains(btn) || btn.disabled) return;
 
     const row = btn.closest('tr');

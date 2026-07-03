@@ -157,7 +157,7 @@ const standardCapTemplate = {
     'max': '999999999.99',
     'tooltip': {
         'ariaLabel': 'Help about understanding permanent standard',
-        'text': 'The 10-year standard payment amount that is calculated when first enrolling into IBR. Minimum payments cannot exceed this amount while on the plan. If left at the default, this will be calculated for you.'
+        'text': 'The 10-year standard payment amount that is calculated when first enrolling into IBR. Minimum payments cannot exceed this amount while on the plan. If left at the default or your selected plan is RAP, this will be calculated for you.'
     },
     'loanField': true
 }

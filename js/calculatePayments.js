@@ -414,7 +414,8 @@ function calculateMinimumPayments(basicInfo, loans, year = 0, firstYearPlanEstim
             }
         }
         
-        const planOptions = calculatePaymentPlans(borrowerLoans, borrowerAGI, borrowerPortionOfPayment, borrowerPovertyLine, borrowerDependents, borrowerStandardCap, borrowerPreviousSTDPayment);
+        const borrowerPlan = basicInfo[borrower].repaymentPlan;
+        const planOptions = calculatePaymentPlans(borrowerLoans, borrowerAGI, borrowerPlan, borrowerPortionOfPayment, borrowerPovertyLine, borrowerDependents, borrowerStandardCap, borrowerPreviousSTDPayment);
         saveToHistory[borrower] = planOptions;
     });
 
@@ -434,18 +435,18 @@ function calculateMinimumPayments(basicInfo, loans, year = 0, firstYearPlanEstim
         return Math.round(amount * multiplier);
     }
     
-    function calculatePaymentPlans(borrowerLoans, AGI, portionOfPayment, povertyLine, dependents, standardCap, previousSTDPayment) {
+    function calculatePaymentPlans(borrowerLoans, AGI, borrowerPlan, portionOfPayment, povertyLine, dependents, standardCap, previousSTDPayment) {
         const oldIBR = (agi, pov) => { return Math.max(0, agi - pov * 1.5) * 0.15 / 12; }
         const newIBR = (agi, pov) => { return Math.max(0, agi - pov * 1.5) * 0.10 / 12; }
         const rap = (agi, deps) => {
             const rate = Math.min(0.10, Math.floor(agi / 10000) / 100);
-            const baseAnnual = agi * rate;
-            const proratedAnnual = baseAnnual * portionOfPayment; // As of Nov 2025, RAP is prorated for married filing jointly
-            const monthlyPayment = (proratedAnnual / 12) - (50 * deps); // As of Nov 2025, borrower level reduction
+            const baseMonthly = (agi * rate) / 12;
+            const dependentReduction = baseMonthly - (50 * deps);
+            const monthlyPayment = dependentReduction * portionOfPayment; // As of Nov 2025, RAP is prorated for married filing jointly
             return Math.max(10, monthlyPayment); // $10 minimum monthly payment
         }
         const std = (loans, standardCap, previousSTDPayment) => {
-            if (standardCap) return standardCap; // most priority
+            if (standardCap && borrowerPlan != 'rap') return standardCap; // most priority
             if (previousSTDPayment) return previousSTDPayment;
 
             let totalMonthly = 0;
@@ -459,12 +460,10 @@ function calculateMinimumPayments(basicInfo, loans, year = 0, firstYearPlanEstim
         };
     
         const stdPayment = Math.round(std(borrowerLoans, standardCap, previousSTDPayment));
-        const stdPaymentCapitalized = Math.round(std(borrowerLoans, false, false));
         const planOptions = {};
-        ['rap', 'old', 'new', 'std', 'stdCapitalized'].forEach(plan => {
+        ['rap', 'old', 'new', 'std'].forEach(plan => {
             if (plan === 'rap') { planOptions[plan] = Math.round(rap(AGI, dependents)); }
             if (plan === 'std') { planOptions[plan] = stdPayment; }
-            if (plan === 'stdCapitalized') { planOptions[plan] = stdPaymentCapitalized; }
             if (plan === 'old' || plan === 'new') {
                 const rawIBR = ((plan === 'old') ? oldIBR(AGI, povertyLine) : newIBR(AGI, povertyLine)) * portionOfPayment;
                 planOptions[plan] = Math.round(Math.min(rawIBR, stdPayment));

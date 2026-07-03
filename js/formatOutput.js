@@ -170,7 +170,7 @@ function getBorrowerStatisticsRows(members, totals) {
     MONTHLY PAYMENT TABLE
 ------------------------------------------------- */
 function getPlanHeaderArray() {
-    return [ {'rap':'RAP'}, {'old':'OLD IBR'}, {'new':'NEW IBR'}, {'stdCapitalized':`STANDARD<br>(10 YEAR)`} ];
+    return [ {'rap':'RAP'}, {'old':'OLD IBR'}, {'new':`NEW IBR<br>or PAYE`}, {'std':`STANDARD<br>(10 YEAR)`} ];
 }
 
 function getPlanHeader(borrowers) {
@@ -194,7 +194,6 @@ function getPlanHeader(borrowers) {
 
 function getMonthlyPaymentsTable(borrowers, data) {
     const firstYearPlanEstimates = structuredClone(data.firstYearPlanEstimates);
-    borrowers.forEach(borrower => delete firstYearPlanEstimates[borrower].std); // We want the capitalized standard plan for this only
 
     return `` +
     `<div class="result-table-wrapper">

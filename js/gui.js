@@ -546,7 +546,8 @@ async function runWorkerTask(task, data) {
             cryptoWorker = null;
         };
         cryptoWorker.onerror = (err) => {
-            reject(err);
+            console.log("Worker execution failed");
+            reject(new Error(err.message || "Worker execution failed"));
             cryptoWorker.terminate();
             cryptoWorker = null;
         };
@@ -655,9 +656,9 @@ async function saveToStorage(passphrase) {
 
 // Creates worker blob to offload heavy encryption compute for improved UI -- code by Grok
 function createCryptoWorker() {
-    const libPath = new URL('js/dependencies/argon2-bundled.min.js', window.location.href).href;
+    const pureArgonCodeText = `(${argon2WrapperFunction.toString()})();`;
     const workerScript = `
-        importScripts('${libPath}');
+        ${pureArgonCodeText}
 
         const encoder = new TextEncoder();
         const decoder = new TextDecoder();

@@ -2,8 +2,9 @@
     GLOBAL VARIABLES / PROTOTYPES (F0R 2026)
 ------------------------------------------------- */
 // Update annually via https://aspe.hhs.gov/topics/poverty-economic-mobility/poverty-guidelines
-const BASE_POVERTY = { ak: 19550, hi: 17990, us: 15650 };
-const INCREMENT_POVERTY = { ak: 6880, hi: 6330, us: 5500 };
+const BASE_POVERTY = { ak: 19550, hi: 17990, base: 15650 };
+const INCREMENT_POVERTY = { ak: 6880, hi: 6330, base: 5500 };
+const COMMUNITY_PROPERTY_STATES = ['az', 'ca', 'id', 'la', 'nv', 'nm', 'tx', 'wa', 'wi'];
 const CPI_U_MULTIPLIER = 1.028; // "Consumer Price Index for All Urban Consumers" estimate for next 30 years
 const STANDARD_DEDUCTIONS = {
     'SINGLE'    : 16100,
@@ -45,16 +46,17 @@ function calculatePayments(data) {
         }, {});
     
         const inputValidated = inputValidation(sortedData, basicInfo_INPUT, loans_INPUT); //basicInfo & loans populated with user input
-        if (!inputValidated) return `There was an error validating your request.` +
-                                    `\nPlease ensure all information is correct and try again.`;
+        if (!inputValidated) return `<div class="results-error-div">There was an error validating your request.` +
+                                    `\nPlease ensure all information is correct and try again.</div>`;
 
         const basicInfo = structuredClone(basicInfo_INPUT);
         const loans = structuredClone(loans_INPUT);
         const validBorrowers = validateBorrowers(basicInfo, loans);
-        if (!validBorrowers) return `There are no loans to simulate repayment. ` +
+        if (!validBorrowers) return `<div class="results-error-div">There are no loans to simulate repayment. ` +
                                     `This could be due to all loans being disabled or all ` +
                                     `borrower\'s meeting their plan\'s qualified payments.` +
-                                    `\n\nPlease ensure all information is correct and try again.`;
+                                    `<div class="results-error-spacer"></div>` +
+                                    `Please ensure all information is correct and try again.</div>`;
   
         // Filter valid borrowers from loans object, then begin simulation                        
         Object.keys(loans).forEach(borrower => { 
@@ -98,7 +100,11 @@ function inputValidation(data, basicInfo, loans) {
         ["self_interestReduction", "boolean", ["no", "yes"]], 
         ["self_standardCap", "number", "float", 0, 999999999.99],
         ["familySize", "number", "integer", 1, 99],
-        ["residency", "string", ["us", "ak", "hi"]], 
+        ["residency", "string", ["al", "ak", "az", "ar", "ca", "co", "ct", "de", 
+        "fl", "ga", "hi", "id", "il", "in", "ia", "ks", "ky", "la", "me", "md", 
+        "ma", "mi", "mn", "ms", "mo", "mt", "ne", "nv", "nh", "nj", "nm", "ny", 
+        "nc", "nd", "oh", "ok", "or", "pa", "ri", "sc", "sd", "tn", "tx", "ut", 
+        "vt", "va", "wa", "wv", "wi", "wy"]],
         ["filingJointly", "boolean", ["no", "yes"], "marriedDependent"],
         ["poolOverpayments", "boolean", ["no", "yes"], "spouseHasLoansDependent"],
         ["spouse_agi", "number", "float", 0, 999999999.99, "marriedDependent"],
@@ -400,21 +406,25 @@ function calculateMinimumPayments(basicInfo, loans, year = 0, firstYearPlanEstim
         const familySize = basicInfo.familySize;
         const residency = basicInfo.residency;
         const dependents = basicInfo.dependents;
-        const borrowerPovertyLine = calculatePovertyGuidelines(familySize, residency, year);
-
+        
         let borrowerAGI = basicInfo[borrower].agi;
         let borrowerPortionOfPayment = 1;
+        let borrowerFamilySize = familySize;
         let borrowerDependents = dependents;
         if (isMarried) {
             if (filingJointly) {
                 borrowerAGI = householdAGI;
                 borrowerPortionOfPayment = (householdLoanSum > 0) ? loanSums[borrower] / householdLoanSum : 0.5;
             } else {
-                borrowerDependents = (borrower === greaterAGI || validBorrowers.length === 1) ? dependents : 0;
+                const isCommunityPropertyState = COMMUNITY_PROPERTY_STATES.indexOf(residency.toLowerCase()) !== -1;
+                if (isCommunityPropertyState) borrowerAGI = householdAGI / 2;
+                borrowerDependents = (borrower === greaterAGI) ? dependents : 0;
+                borrowerFamilySize = 1 + borrowerDependents;
             }
         }
-        
+
         const borrowerPlan = basicInfo[borrower].repaymentPlan;
+        const borrowerPovertyLine = calculatePovertyGuidelines(borrowerFamilySize, residency, year);
         const planOptions = calculatePaymentPlans(borrowerLoans, borrowerAGI, borrowerPlan, borrowerPortionOfPayment, borrowerPovertyLine, borrowerDependents, borrowerStandardCap, borrowerPreviousSTDPayment);
         saveToHistory[borrower] = planOptions;
     });
@@ -425,10 +435,11 @@ function calculateMinimumPayments(basicInfo, loans, year = 0, firstYearPlanEstim
     /* -------------------------------------------------
         IDR CERTIFICATION FUNCTIONS
     ------------------------------------------------- */
-    function calculatePovertyGuidelines(familySize = 1, residency = 'us', years = 0) {
+    function calculatePovertyGuidelines(familySize = 1, residency = 'base', years = 0) {
         const res = residency.toLowerCase();
-        const base = BASE_POVERTY[res];
-        const inc = INCREMENT_POVERTY[res];
+        const povertyLine = (res !== 'ak' && res !== 'hi') ? 'base' : res;
+        const base = BASE_POVERTY[povertyLine];
+        const inc = INCREMENT_POVERTY[povertyLine];
     
         const amount = base + (familySize - 1) * inc;
         const multiplier = Math.pow(CPI_U_MULTIPLIER, years);
@@ -454,7 +465,8 @@ function calculateMinimumPayments(basicInfo, loans, year = 0, firstYearPlanEstim
                 const { principal, interestAccrual, interestRate } = loans[id];
                 const capitalized = principal + interestAccrual;
                 const rate = interestRate / 100;
-                totalMonthly += capitalized * (rate / 12) / (1 - Math.pow(1 + rate / 12, -120));
+                const loanAmoritization = (rate === 0) ? capitalized / 120 : capitalized * (rate / 12) / (1 - Math.pow(1 + rate / 12, -120));
+                totalMonthly += loanAmoritization;
             }
             return Math.max(50, totalMonthly); // $50 minimum per borrower
         };
@@ -606,7 +618,7 @@ function simulateRepayment(basicInfo_BASE, loans_BASE, repaymentOrders_BASE, fir
     const simulation = repaymentSimulation.simulation;
     const totals = simulation.totals;
     const monthlyStatistics = simulation.monthlyStatistics;
-    while (remainingPayments && borrowersProcessed != borrowers.length) {
+    while (remainingPayments && borrowersProcessed !== borrowers.length) {
         month++;
         monthlyStatistics[month] = structuredClone(monthlyTemplate);
         const thisMonthSimulation = monthlyStatistics[month];
@@ -991,10 +1003,12 @@ function getBorrowerTaxBomb(basicInfo, balance, borrowers, borrower, year, sameY
     }, 0);
     const dependents = basicInfo.dependents;
 
-    const deductionType = (filingJointly) ? 
-        STANDARD_DEDUCTIONS.MARRIED : (married && !filingJointly) ?
-            STANDARD_DEDUCTIONS.SINGLE: (dependents > 0) ?  // MFS is technically not single but used for simplicity
-                STANDARD_DEDUCTIONS.HOH : STANDARD_DEDUCTIONS.SINGLE;
+    const deductionType = (() => {
+        if (filingJointly) return STANDARD_DEDUCTIONS.MARRIED;
+        if (!married && dependents > 0) return STANDARD_DEDUCTIONS.HOH;
+        return STANDARD_DEDUCTIONS.SINGLE; // Covers single and MFS for simplicity
+    })();
+
     const growthFactor = Math.pow(CPI_U_MULTIPLIER, year);
     const deduction = deductionType * growthFactor;
 
@@ -1002,8 +1016,13 @@ function getBorrowerTaxBomb(basicInfo, balance, borrowers, borrower, year, sameY
     if (sameYearForgiveness) start += previousBorrowerBalance;
     const end = start + balance;
 
+    const brackets = INCOME_BRACKETS[filingType];
+    return calculateBrackets(brackets, start, end, growthFactor);
+}
+
+function calculateBrackets(brackets, start, end, growthFactor = 1) {
     let total = 0;
-    for (const bracket of INCOME_BRACKETS[filingType]) {
+    for (const bracket of brackets) {
         const min = bracket.min * growthFactor;
         const max = bracket.max * growthFactor;
         const rate = bracket.rate; 

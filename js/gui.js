@@ -1,9 +1,10 @@
 /* -------------------------------------------------
     GLOBAL VARIABLES / PROTOTYPES
 ------------------------------------------------- */
-let incTimer, scrollTimer, announcementTimeout, cryptoWorker, workerUrl;
+let incTimer, scrollTimer, announcementTimeout, cryptoWorker, workerUrl, selectSearchString, selectSearchTimeout;
 const cache = {};
 const announcer = document.getElementById('live-announcements');
+const VALID_INPUTS = /^(?:\d{1,3}(?:,\d{3})*|\d+)(?:\.\d{1,2})?$|^(?:yes|no)$|^(?:old|new|rap)$|^(?:none|self|spouse)$|^(?:al|ak|az|ar|ca|co|ct|de|fl|ga|hi|id|il|in|ia|ks|ky|la|me|md|ma|mi|mn|ms|mo|mt|ne|nv|nh|nj|nm|ny|nc|nd|oh|ok|or|pa|ri|sc|sd|tn|tx|ut|vt|va|wa|wv|wi|wy)$/i
 
 Object.defineProperty(String.prototype, 'strToNum', {
     value: function() {
@@ -156,8 +157,9 @@ function addFormListeners() {
     // Steps integer number inputs for custom spinners, supports holding and acceleration
     document.querySelectorAll('.input-wrapper').forEach(wrapper => createSpinnerListeners(wrapper));
 
-    // Add custom select drop downs
+    // Add custom select drop downs, resizes automatically if orientation changes
     document.querySelectorAll('.select-wrapper').forEach(wrapper => createSelectListeners(wrapper));
+    window.addEventListener('resize', setSelectDropdownHeight);
 
     // Plan type changes qualifiedPayments min/max and placeholder
     const clampQualifiedPayments = Array.from(document.querySelectorAll('[data-field="repaymentPlan"], [data-field="pslfEligibility"]'));
@@ -181,8 +183,8 @@ function addFormListeners() {
         element.addEventListener('focusin', tooltipBoundingBox);
         element.addEventListener('pointerenter', tooltipBoundingBox);
     })
-    const resizeObserver = new ResizeObserver(resize);
-    resizeObserver.observe(document.documentElement);
+    const resizeObserverTooltip = new ResizeObserver(resizeTooltip);
+    resizeObserverTooltip.observe(document.documentElement);
 }
 
 
@@ -581,13 +583,12 @@ async function loadFromStorage(passphrase, savedSession) {
     delete fromLocalStorageObject["spouseLoanCount"];
     
     // ---- finally, fill every stored field -------------------------------
-    const VALID = /^(?:\d{1,3}(?:,\d{3})*|\d+)(?:\.\d{1,2})?|(?:yes|no)|(?:old|new|rap)|(?:none|self|spouse)|(?:us|ak|hi)$/i
     const keysFromLocalStorage = Object.keys(fromLocalStorageObject);
     for (const key of keysFromLocalStorage) {
         const value = fromLocalStorageObject[key];
         const element = document.getElementById(key);
 
-        if (!VALID.test(value)) {
+        if (!VALID_INPUTS.test(value)) {
             if (!value && element.value) element.value = '';
             continue;
         }
@@ -631,10 +632,9 @@ async function saveToStorage(passphrase) {
     const keysToLocalStorageObject = Object.keys(toLocalStorageObject);
 
     // Validate and remove empty/invalid inputs
-    const VALID = /^(?:\d{1,3}(?:,\d{3})*|\d+)(?:\.\d{1,2})?|(?:yes|no)|(?:old|new|rap)|(?:none|self|spouse)|(?:us|ak|hi)$/i
     for (const key of keysToLocalStorageObject) {
         const value = toLocalStorageObject[key];
-        if (value && !VALID.test(value)) {
+        if (value && !VALID_INPUTS.test(value)) {
             delete toLocalStorageObject[key];
             continue;
         }
@@ -820,8 +820,7 @@ function submitForm(event) {
 
     let output = calculatePayments(formObject);
     if (output == null || typeof(output) !== 'string') {
-        output = `There was an error processing your request.` +
-        `\nPlease refresh the page and try again.`;
+        output = `<div class="results-error-div">There was an error processing your request.\nPlease refresh the page and try again.</div>`;
     }
     results.innerHTML = output;
     announce(output);
@@ -1412,6 +1411,7 @@ function setSelectOption(option, suppressEvents = false) {
     const { dropdown, options, valueSpan, hiddenInput } = getSelectComponents(option);
     options.forEach(o => o.removeAttribute('aria-selected'));
     option.setAttribute('aria-selected', 'true');
+    option.scrollIntoView({ block: 'nearest', inline: 'nearest' });
     dropdown.setAttribute('aria-activedescendant', option.id);
     valueSpan.textContent = option.textContent;
     hiddenInput.value = option.dataset.value;
@@ -1421,8 +1421,18 @@ function setSelectOption(option, suppressEvents = false) {
     }
 }
 
+function setSelectDropdownHeight() {
+    const expandedTrigger = document.querySelector('.select-trigger[aria-expanded="true"]');
+    if (expandedTrigger) {
+        const { dropdown, options } = getSelectComponents(expandedTrigger);
+        const cellHeight = options[0].offsetHeight;
+        const maxHeight = Math.max(1, Math.floor((window.innerHeight * 0.30) / cellHeight)) * cellHeight + 2; //2px outline offset
+        dropdown.style.setProperty('--dropdown-max-height', `${maxHeight}px`);
+    }
+}
+
 function handleSelectOpen(e) {
-    const { trigger, dropdown } = getSelectComponents(e.target);
+    const { trigger, dropdown, options } = getSelectComponents(e.target);
     trigger.setAttribute('aria-expanded', 'true');
     dropdown.style.display = 'block';
 
@@ -1433,6 +1443,10 @@ function handleSelectOpen(e) {
         }
         dropdown.focus();
     });
+    setSelectDropdownHeight();
+
+    const selectedOption = options.find(o => o.getAttribute('aria-selected') === 'true') || options[0];
+    if (selectedOption) dropdown.scrollTop = selectedOption.offsetTop;
 }
 
 function handleSelectClose(e) {
@@ -1456,6 +1470,11 @@ function handleSelectTriggerClick(e) {
 
 function handleSelectTriggerKeydown(e) {
     const { dropdown } = getSelectComponents(e.target);
+
+    if (/^[a-zA-Z ]$/.test(e.key)) {
+        e.preventDefault();
+        handleSelectLookAhead(e)
+    }
     if (['Enter',' '].includes(e.key)) {
         e.preventDefault();
         handleSelectOpen(e);
@@ -1474,7 +1493,12 @@ function handleSelectDropdownBlur(e) {
 
 function handleSelectDropdownKeydown(e) {
     const { trigger } = getSelectComponents(e.target);
-    if (['Escape', 'Enter',' '].includes(e.key)) {
+
+    if (/^[a-zA-Z ]$/.test(e.key)) {
+        e.preventDefault();
+        handleSelectLookAhead(e)
+    }
+    if (['Escape', 'Enter'].includes(e.key)) {
         e.preventDefault();
         handleSelectClose;
         trigger.focus();
@@ -1484,6 +1508,24 @@ function handleSelectDropdownKeydown(e) {
         e.preventDefault();
         handleSelectKeydownNavigation(e);
     }
+}
+
+function handleSelectLookAhead(e) {
+    const { dropdown, options } = getSelectComponents(e.target);
+    clearTimeout(selectSearchTimeout);
+        if (selectSearchString == null) selectSearchString = '';
+
+        selectSearchString += e.key.toLowerCase();
+        const match = [...options].find(li => li.textContent.trim().toLowerCase().startsWith(selectSearchString));
+        if (match) {
+            setSelectOption(match);
+            dropdown.scrollTop = match.offsetTop;
+        }
+
+        selectSearchTimeout = setTimeout(() => {
+            selectSearchString = '';
+        }, 1000); 
+        return;
 }
 
 function handleSelectKeydownNavigation(e) {
@@ -1567,7 +1609,7 @@ function resetBoundingBox(tooltip) {
 }
 
 // Resizes tooltips if orientation changes while open
-function resize() {
+function resizeTooltip() {
     document.querySelectorAll('.help-wrapper:hover .tooltip, .help-wrapper:focus-within .tooltip').forEach(tooltip => {
         const wrapper = tooltip.closest('.help-wrapper');
         if (wrapper) tooltipBoundingBox({ target: wrapper });
@@ -1682,9 +1724,9 @@ function focusTooltip(e) {
 // Helper for add/loan event delegation
 function handleLoanButtonClick(e) {
     const btn = e.target.closest('.addLoan, .deleteLoan, .toggleLoan');
-    btn.blur();
     if (!btn || !document.body.contains(btn) || btn.disabled) return;
-
+    btn.blur();
+    
     const row = btn.closest('tr');
     if (!row || !document.body.contains(row)) return;
 

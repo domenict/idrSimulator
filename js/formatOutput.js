@@ -31,7 +31,7 @@ function formatOutput(rawData) {
     BORROWER(S) HANDLING
 ------------------------------------------------- */
 function getGUIResult(borrowers, data) {
-    let output = `<h3>SUMMARY</h3>`;
+    let output = `<h3 class="results-summary-h3">SUMMARY</h3>`;
 
     let pslfBorrowers = 0;
     borrowers.forEach(borrower => {

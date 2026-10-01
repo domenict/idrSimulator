@@ -69,7 +69,7 @@
     --weight-semi:       500;       /* loan Labels */
     --weight-bold:       600;       /* labels, legends */
     --weight-header:     700;       /* headers */
-    --line-height-sm:    1.2;       /* responsive labels, capslock warning */
+    --line-height-sm:    1.25;       /* responsive labels, capslock warning */
     --line-height-base:  1.5;
     --line-height-input: 2;
     --disabled-opacity:  0.75;
@@ -860,6 +860,7 @@ input::placeholder { color:var(--color-font-pholder); }
     right: 0;
     margin: 0;
     padding: 0;
+    max-height: var(--dropdown-max-height);
     z-index: calc(var(--z-tooltip) - 1);
     background: var(--color-bg-form);
     border: var(--border-input);
@@ -867,7 +868,8 @@ input::placeholder { color:var(--color-font-pholder); }
     border-color: var(--color-font-primary);
     box-shadow: var(--shadow-md);
     outline: none;
-    overflow: none;
+    overflow-y: auto;
+    overflow-x: none;
     list-style: none;
     visibility: hidden;
     pointer-events: none;
@@ -1137,25 +1139,33 @@ tr:has(.toggleLoan[data-enabled="false"]) .row-label { opacity: var(--disabled-o
 #resultsContainer {
     display: none;
     margin-top: var(--space-3);
-    padding: 0 var(--space-7) var(--space-5) var(--space-7);
+    padding: var(--space-5) var(--space-7) var(--space-5) var(--space-7);
     border: var(--border-wrapper);
     border-radius: var(--radius-md);
     box-shadow: var(--shadow-md);
-}
-
-#results {
     font-size: var(--font-size-med);
 }
 
-#results h3,
-#results p,
-#results div {
-    margin-top: 0;
-    margin-bottom: var(--space-4);
+#results h3 { 
+    margin: var(--space-7) 0 var(--space-3) 0; 
     padding: 0;
 }
 
-#results h3 { margin: var(--space-7) 0 var(--space-3) 0 }
+#results .results-summary-h3 { margin: var(--space-3) 0 var(--space-3) 0; }
+
+#results p,
+#results div {
+    margin: 0 0 var(--space-4) 0;
+    padding: 0;
+}
+
+#results .results-error-div, 
+#results .results-error-spacer {
+    white-space: pre-line;
+    margin: 0;
+}
+
+#results .results-error-spacer { height: var(--space-4); }
 
 /* -------------------------------------------------
     ANIMATIONS AND CLASSES
@@ -1254,7 +1264,7 @@ tr:has(.toggleLoan[data-enabled="false"]) .row-label { opacity: var(--disabled-o
     .loan-table td:nth-child(3)::before { content: "Accrued Interest: "; transition: opacity var(--trans-fast); }
     .loan-table td:nth-child(4)::before { content: "Interest Rate: "; transition: opacity var(--trans-fast); }
 
-    .loan-table:has(.toggleLoan[data-enabled="false"]) {
+    .loan-table tr:has(.toggleLoan[data-enabled="false"]) {
         & td:nth-child(2)::before,
         & td:nth-child(3)::before,
         & td:nth-child(4)::before {

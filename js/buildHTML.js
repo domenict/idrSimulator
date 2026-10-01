@@ -157,7 +157,7 @@ const standardCapTemplate = {
     'max': '999999999.99',
     'tooltip': {
         'ariaLabel': 'Help about understanding permanent standard',
-        'text': 'The 10-year standard payment amount that is calculated when first enrolling into IBR. Minimum payments cannot exceed this amount while on the plan. If left at the default or your selected plan is RAP, this will be calculated for you.'
+        'text': 'The maximum monthly payment equal to the 10-year standard payment when first enrolling into IBR. This value can be found by navigating to "My Loans" at studentaid.gov and pressing "Download My Aid Data." If left at the default, this will be calculated for you. This does not affect RAP.'
     },
     'loanField': true
 }
@@ -336,9 +336,56 @@ const residencyTemplate = {
         'data-storage': 'localStorage'
     },
     'options': {
-        'us': 'Contiguous US',
+        'al': 'Alabama',
         'ak': 'Alaska',
-        'hi': 'Hawaii'
+        'az': 'Arizona',
+        'ar': 'Arkansas',
+        'ca': 'California',
+        'co': 'Colorado',
+        'ct': 'Connecticut',
+        'de': 'Delaware',
+        'fl': 'Florida',
+        'ga': 'Georgia',
+        'hi': 'Hawaii',
+        'id': 'Idaho',
+        'il': 'Illinois',
+        'in': 'Indiana',
+        'ia': 'Iowa',
+        'ks': 'Kansas',
+        'ky': 'Kentucky',
+        'la': 'Louisiana',
+        'me': 'Maine',
+        'md': 'Maryland',
+        'ma': 'Massachusetts',
+        'mi': 'Michigan',
+        'mn': 'Minnesota',
+        'ms': 'Mississippi',
+        'mo': 'Missouri',
+        'mt': 'Montana',
+        'ne': 'Nebraska',
+        'nv': 'Nevada',
+        'nh': 'New Hampshire',
+        'nj': 'New Jersey',
+        'nm': 'New Mexico',
+        'ny': 'New York',
+        'nc': 'North Carolina',
+        'nd': 'North Dakota',
+        'oh': 'Ohio',
+        'ok': 'Oklahoma',
+        'or': 'Oregon',
+        'pa': 'Pennsylvania',
+        'ri': 'Rhode Island',
+        'sc': 'South Carolina',
+        'sd': 'South Dakota',
+        'tn': 'Tennessee',
+        'tx': 'Texas',
+        'ut': 'Utah',
+        'vt': 'Vermont',
+        'va': 'Virginia',
+        'wa': 'Washington',
+        'wv': 'West Virginia',
+        'wi': 'Wisconsin',
+        'wy': 'Wyoming'
     },
     'loanField': false
 }

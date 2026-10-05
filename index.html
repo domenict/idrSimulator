@@ -11,13 +11,52 @@
     <link href="https://fonts.googleapis.com/css2?family=Montserrat:ital,wght@0,100..900;1,100..900&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="styles.css">
 
+    <!-- DEPENDENCIES -->
     <script defer src="js/dependencies/beautify.min.js"></script>
     <script defer src="js/dependencies/beautify-html.min.js"></script>
     <script defer src="js/dependencies/argon2-bundled.min.js"></script>
-    <script defer src="js/formatOutput.js"></script>
-    <script defer src="js/calculatePayments.js"></script>
-    <script defer src="js/buildHTML.js"></script>
-    <script defer src="js/gui.js"></script>
+
+    <!-- FORMATTING OUTPUT -->
+    <script defer src="js/formatOutput/helpers.js"></script>
+    <script defer src="js/formatOutput/buildStatisticsTable.js"></script>
+    <script defer src="js/formatOutput/buildMonthlyPaymentsTable.js"></script>
+    <script defer src="js/formatOutput/dynamicSnippets.js"></script>
+    <script defer src="js/formatOutput/main.js"></script>
+
+    <!-- SIMULATION -->
+    <script defer src="js/calculatePayments/globals.js"></script>
+    <script defer src="js/calculatePayments/inputValidation.js"></script>
+    <script defer src="js/calculatePayments/borrowerValidation.js"></script>
+    <script defer src="js/calculatePayments/findAvalanche.js"></script>
+    <script defer src="js/calculatePayments/idrCertification.js"></script>
+    <script defer src="js/calculatePayments/taxBomb.js"></script>
+    <script defer src="js/calculatePayments/simulateRepayment.js"></script>
+    <script defer src="js/calculatePayments/main.js"></script>
+    
+    <!-- BUILDING HTML -->
+    <script defer src="js/buildHTML/helpers.js"></script>
+    <script defer src="js/buildHTML/numberInputs.js"></script>
+    <script defer src="js/buildHTML/select.js"></script>
+    <script defer src="js/buildHTML/radio.js"></script>
+    <script defer src="js/buildHTML/loanTable.js"></script>
+    <script defer src="js/buildHTML/buildSections.js"></script>
+    <script defer src="js/buildHTML/main.js"></script>
+
+     <!-- BUILDING GUI -->
+    <script defer src="js/gui/globals.js"></script>
+    <script defer src="js/gui/features/customSelect.js"></script>
+    <script defer src="js/gui/features/customSpinners.js"></script>
+    <script defer src="js/gui/features/customTooltips.js"></script>
+    <script defer src="js/gui/interactive/autoSpacer.js"></script>
+    <script defer src="js/gui/interactive/inputListeners.js"></script>
+    <script defer src="js/gui/interactive/tableRowHandling.js"></script>
+    <script defer src="js/gui/interactive/eventToggles.js"></script>
+    <script defer src="js/gui/session/encryptionWorker.js"></script>
+    <script defer src="js/gui/session/sessionHandling.js"></script>
+    <script defer src="js/gui/modals/modalHandling.js"></script>
+    <script defer src="js/gui/modals/modalTemplates.js"></script>
+    <script defer src="js/gui/session/formSubmission.js"></script>
+    <script defer src="js/gui/domLoad.js"></script>
 </head>
 <body>
 <div id="initial-loader">

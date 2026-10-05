@@ -56,11 +56,11 @@
     /* === Typography === */
     --font-family:       "Montserrat", sans-serif;
     --font-size-html:    16px;
-    --font-size-tiny:    0.6rem;    /* min-width discalaimer */
+    --font-size-tiny:    0.5625rem; /* min-width discalaimer */
     --font-size-xs:      0.75rem;   /* help text */
-    --font-size-sm:      0.85rem;   /* modal text */
-    --font-size-sm-med:  0.9rem;    /* buttons, table header */
-    --font-size-med:     0.95rem;   /* legends, labels, inputs */
+    --font-size-sm:      0.8125rem; /* modal text */
+    --font-size-sm-med:  0.875rem;  /* buttons, table header */
+    --font-size-med:     0.9375rem; /* legends, labels, inputs */
     --font-size-base:    1rem;
     --font-size-med-lg:  1.1875rem; /* h3 */
     --font-size-lg:      1.25rem;   /* h2 */
@@ -69,7 +69,7 @@
     --weight-semi:       500;       /* loan Labels */
     --weight-bold:       600;       /* labels, legends */
     --weight-header:     700;       /* headers */
-    --line-height-sm:    1.25;       /* responsive labels, capslock warning */
+    --line-height-sm:    1.1875;    /* responsive labels, capslock warning */
     --line-height-base:  1.5;
     --line-height-input: 2;
     --disabled-opacity:  0.75;
@@ -855,7 +855,7 @@ input::placeholder { color:var(--color-font-pholder); }
 .select-dropdown {
     display: none;
     position: absolute;
-    top: calc(100% + 1px);
+    top: calc(100% + 2px);
     left: 0;
     right: 0;
     margin: 0;
@@ -863,13 +863,12 @@ input::placeholder { color:var(--color-font-pholder); }
     max-height: var(--dropdown-max-height);
     z-index: calc(var(--z-tooltip) - 1);
     background: var(--color-bg-form);
-    border: var(--border-input);
-    border-radius: 0;
-    border-color: var(--color-font-primary);
+    outline: var(--border-input);
+    outline-color: var(--color-font-primary);
     box-shadow: var(--shadow-md);
-    outline: none;
+    border: none;
     overflow-y: auto;
-    overflow-x: none;
+    overflow-x: hidden;
     list-style: none;
     visibility: hidden;
     pointer-events: none;
@@ -1084,6 +1083,8 @@ input::placeholder { color:var(--color-font-pholder); }
     width: calc(var(--space-5) * 8);
     padding: var(--space-2) var(--space-3) 0 var(--space-4);
 }
+
+.loan-table .disable-button-svg { overflow: visible }
 
 .loan-table input {
     height: var(--space-9);

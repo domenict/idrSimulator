@@ -1,13 +1,15 @@
-// Checks if tooltip is expanded 
+/* -------------------------------------------------
+    LISTENER HANDLING
+------------------------------------------------- */
 function createTooltipListeners(wrapper) {
     const tooltip = wrapper.querySelector(".tooltip");
     const show = (e) => {
         const wrapper = e.target;
-        const message = tooltip.textContent.replace(/&#10;/g, '\n').trim();
+        const inFocus = tooltip.classList.contains("tooltip-open");
         const locked = tooltip.classList.contains("tooltip-locked");
-        if(!locked) {
-            announce(message);
+        if(!locked && !inFocus) {
             wrapper.setAttribute('aria-expanded', 'true');
+            tooltipBoundingBox(tooltip);
         }
     }
     const hide = (e) => {
@@ -22,10 +24,104 @@ function createTooltipListeners(wrapper) {
 
     wrapper.addEventListener('mouseenter', show);
     wrapper.addEventListener('mouseleave', hide);
-    wrapper.addEventListener('click', focusTooltip);
-    wrapper.addEventListener('focus', focusTooltip);
+    wrapper.addEventListener('click', clickFocusTooltipHandler);
+    wrapper.addEventListener('focusin', () => {
+        if (!wrapper.matches(':focus-visible')) return;
+        focusTooltip(tooltip);
+    });
 }
 
+// Focuses tooltip for accessability and locks other tooltips from hover
+const clickFocusTooltipHandler = (e) => {
+    e.stopPropagation();
+    e.preventDefault();
+    const tooltip = e.target.closest('.help-wrapper').querySelector(".tooltip");
+
+    let isOpen = tooltip.classList.contains('tooltip-open');
+    if (!isOpen) {
+        const alreadyOpenTooltip = document.querySelector('.tooltip-open');
+        if (alreadyOpenTooltip) closeTooltip(alreadyOpenTooltip);
+        focusTooltip(tooltip);
+    } else {
+        closeTooltipHandler(e);
+    }
+}
+
+const closeTooltipHandler = (e) => {
+    const targetWrapper = e.target.closest('.help-wrapper');
+    const tooltip = (targetWrapper) ? targetWrapper.querySelector('.tooltip') : document.querySelector('.tooltip-open');
+
+    // Allows highlighting inside focused tooltips
+    if (e && e.type === 'click') {
+        const rect = tooltip.getBoundingClientRect();
+        const isClickInsideTooltipBox = 
+            e.clientX >= rect.left &&
+            e.clientX <= rect.right &&
+            e.clientY >= rect.top &&
+            e.clientY <= rect.bottom;
+        if (isClickInsideTooltipBox) return;
+    }
+
+    closeTooltip(tooltip);
+    if (e.type === 'keydown' && e.key !== 'Tab') {
+        const field = e.target.closest('.field');
+        const nextInput = field.querySelector('.input-wrapper input, .select-wrapper button');
+        nextInput.focus();
+    }
+};
+
+const keydownCloseTooltipHandler = (e) => {
+    const closeKeys = ['Escape', 'Enter', ' ', 'Tab'];
+    if (closeKeys.includes(e.key)) {
+        if (e.key !== 'Tab') {
+            e.stopPropagation();
+            e.preventDefault();
+        }
+        closeTooltipHandler(e); 
+    }
+};
+
+function focusTooltip(tooltip) {
+    const wrapper = tooltip.closest('.help-wrapper');
+
+    tooltip.classList.add('tooltip-open');
+    tooltip.setAttribute('aria-hidden', 'false');
+    tooltipBoundingBox(tooltip);
+    wrapper.setAttribute('aria-expanded', 'true');
+
+    Array.from(document.getElementsByClassName("tooltip")).forEach(el => {
+        if (el.id !== tooltip.id) el.classList.add("tooltip-locked");
+    });
+
+    setTimeout(() => {
+        document.addEventListener('click', closeTooltipHandler);
+        wrapper.addEventListener('keydown', keydownCloseTooltipHandler);
+    }, 10);
+}
+
+function closeTooltip(tooltip) {
+    const wrapper = tooltip.closest('.help-wrapper');
+    const isHovered = wrapper.matches(':hover');
+
+    tooltip.blur();
+    tooltip.classList.remove('tooltip-open');
+    tooltip.setAttribute('aria-hidden', 'true');
+    if (!isHovered) wrapper.setAttribute('aria-expanded', 'false');
+    announcer.textContent = "";
+
+    Array.from(document.getElementsByClassName("tooltip-locked")).forEach(el => {
+        el.classList.remove("tooltip-locked");
+    });
+
+    document.removeEventListener('click', closeTooltipHandler);
+    wrapper.removeEventListener('keydown', keydownCloseTooltipHandler);
+}
+
+
+
+/* -------------------------------------------------
+    BOUNDING BOX
+------------------------------------------------- */
 // Reset tooltip to defaults on hide
 function resetBoundingBox(tooltip) {
     tooltip.style.setProperty('--tooltip-transform', 'translateX(-50%) translateY(0%)');
@@ -40,17 +136,14 @@ function resetBoundingBox(tooltip) {
 
 // Resizes tooltips if orientation changes while open
 function resizeTooltip() {
-    document.querySelectorAll('.help-wrapper:hover .tooltip, .help-wrapper:focus-within .tooltip').forEach(tooltip => {
-        const wrapper = tooltip.closest('.help-wrapper');
-        if (wrapper) tooltipBoundingBox({ target: wrapper });
-    });
+    const openTooltip = document.querySelector('.tooltip-open');
+    tooltipBoundingBox(openTooltip);
 }
 
 // Sets bounding box for tooltips
-function tooltipBoundingBox(e) {
-    const wrapper = e.target.closest('.help-wrapper');
-    const tooltip = wrapper.querySelector('.tooltip');
+function tooltipBoundingBox(tooltip) {
     if (!tooltip) return;
+    const wrapper = tooltip.closest('.help-wrapper');
     resetBoundingBox(tooltip);
 
     // Set globals and set width
@@ -98,51 +191,4 @@ function tooltipBoundingBox(e) {
             tooltip.style.setProperty('--tooltip-arrow-transform', 'translateX(-50%) rotate(180deg)');
         }
     });
-}
-
-// Focuses tooltip for accessability and locks other tooltips from hover
-function focusTooltip(e) {
-    e.stopPropagation();
-    e.preventDefault();
-    const wrapper = e.target.closest('.help-wrapper');
-    const tooltip = wrapper.querySelector(".tooltip");
-
-    const close = () => {
-        tooltip.classList.remove('tooltip-open');
-        tooltip.setAttribute('aria-hidden', 'true');
-        tooltip.blur();
-        tooltip.tabIndex = -1;
-        wrapper.tabIndex = 0;
-        wrapper.setAttribute('aria-expanded', 'false');
-        announcer.textContent = "";
-
-        Array.from(document.getElementsByClassName("tooltip-locked")).forEach(el => {
-            el.classList.remove("tooltip-locked");
-        });
-
-        tooltip.removeEventListener("focusout", close);
-        document.removeEventListener('click', close);
-        document.removeEventListener('keydown', escClose);
-    };
-    const escClose = (e) => { if (e.key === 'Escape' || e.key === "Enter" || e.key === " ") close(); };
-
-    const isOpen = tooltip.classList.toggle('tooltip-open');
-    if (isOpen) {
-        tooltip.setAttribute('role', 'tooltip'); // purely for screen readers
-        tooltip.setAttribute('aria-hidden', 'false');
-        tooltip.focus();
-        tooltip.tabIndex = 0;
-        wrapper.tabIndex = -1;
-        wrapper.setAttribute('aria-expanded', 'true');
-
-        Array.from(document.getElementsByClassName("tooltip")).forEach(el => {
-            if (el.id !== tooltip.id) el.classList.add("tooltip-locked");
-        });
-
-        setTimeout(() => {
-            tooltip.addEventListener("focusout", close, { once: true });
-            document.addEventListener('click', close, { once: true });
-            document.addEventListener('keydown', escClose);
-        }, 10);
-    }
 }

@@ -402,15 +402,19 @@ button:focus-visible {
 .help-icon {
     width: var(--space-5);
     height: var(--space-5);
+    scale: 1.7;
+    margin: 0;
     display: block;
     flex-shrink: 0;
-    margin: 0 0 calc(var(--space-1) * -0.5) calc(var(--space-1) * -0.5);
+    pointer-events: none;
+    --help-icon-focus-ring: transparent;
 }
 
 .help-wrapper {
     position: relative;
     display: inline-block;
     cursor: pointer;
+    outline: none;
 }
 
 .tooltip {
@@ -445,27 +449,26 @@ button:focus-visible {
     transform: var(--tooltip-arrow-transform);
     border: var(--space-3) solid transparent;
     border-bottom-color: var(--color-bg-tooltip);
+    cursor: pointer;
 }
 
 .help-wrapper:hover > .tooltip,
-.help-wrapper:focus-within > .tooltip,
 .tooltip-open {
     display: block;
 }
 
-.help-wrapper:focus-within > .help-icon {
-    outline: 2px solid var(--color-font-primary);
-    outline-offset: 1px;
-    border-radius: 50%;
-}
-.help-wrapper:focus-within > .tooltip {
+.tooltip-open {
     outline: 2px solid var(--color-font-primary);
     outline-offset: 2px;
+    pointer-events: auto !important;
+}
+
+.help-wrapper:has(.tooltip-open) > .help-icon {
+    --help-icon-focus-ring: var(--color-font-primary);
 }
 
 .tooltip::selection { background: var(--color-bg-form); color: var(--color-font-primary) }
 .tooltip-locked { display: none !important; }
-.tooltip-open {  pointer-events: auto !important; }
 
 .error-message {
     display: none;

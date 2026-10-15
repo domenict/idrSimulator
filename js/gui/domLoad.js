@@ -90,15 +90,8 @@ function addFormListeners() {
     document.getElementById('spouseLoans').addEventListener('click', handleLoanButtonClick);
     document.getElementById('spouseLoans').addEventListener('keydown', handleLoanButtonKeydown);
 
-    // Makes tooltips accessible
+    // Makes tooltips accessible, resizes automatically if orientation changes
     document.querySelectorAll('.help-wrapper').forEach(wrapper => createTooltipListeners(wrapper));
-
-    // Sets bounding box for tooltips, resizes automatically if orientation changes
-    const helpWrappers = Array.from(document.querySelectorAll('.help-wrapper'));
-    helpWrappers.forEach(element => {
-        element.addEventListener('focusin', tooltipBoundingBox);
-        element.addEventListener('pointerenter', tooltipBoundingBox);
-    })
     const resizeObserverTooltip = new ResizeObserver(resizeTooltip);
     resizeObserverTooltip.observe(document.documentElement);
 }

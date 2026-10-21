@@ -28,7 +28,7 @@ function showModal(templateStr, savedSession) {
     let template;
     switch(templateStr) {
         case "restore":
-            template = getRestoreTemplate(savedSession, modal, spinner, input, header, text);
+            template = getRestoreTemplate(savedSession, modal, spinner, confirmation, input, header, text);
             break;
         case "save":
             template = getSaveTemplate(modal, spinner, confirmation, input);
@@ -78,7 +78,7 @@ function showModal(templateStr, savedSession) {
 }
 
 // Restore template
-function getRestoreTemplate(savedSession, modal, spinner, input, header, text) {
+function getRestoreTemplate(savedSession, modal, spinner, confirmation, input, header, text) {
     const acceptHandler = async () => {
         function updateTextForFail(header, text) {
             header.textContent = "Incorrect passphrase – try again";
@@ -97,9 +97,18 @@ function getRestoreTemplate(savedSession, modal, spinner, input, header, text) {
 
         const pass = await loadFromStorage(passphrase, savedSession);
         if (pass) {
-            updateToggleEvents();
-            announce('Your saved session has been restored.');
-            hideModal();
+            try {
+                updateToggleEvents();
+                announce('Your saved session has been restored.');
+                hideModal();
+            } catch (error) {
+                spinner.style.display = "none";
+                confirmation.style.display = "flex";
+                confirmation.innerHTML = `<p class="fadeIn modal-message">An error prevented your previous session from properly loading.</p>`;
+                announce(confirmation.textContent);
+                setTimeout(() => hideModal(), 1750);
+                console.log(error);
+            }
         } else {
             updateTextForFail(header, text);
             spinner.style.display = "none";

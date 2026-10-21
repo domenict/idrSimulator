@@ -11,6 +11,7 @@ function submitForm(event) {
 
     const pass = formObjectValidation(formObject);
     if (!pass) return;
+    const oldScrollY = window.scrollY;
 
     let output = calculatePayments(formObject);
     if (output == null || typeof(output) !== 'string') {
@@ -23,10 +24,22 @@ function submitForm(event) {
     Array.from(elements).forEach(element => {
         element.style.display = "block";
         element.classList.remove('animated-' + element.id);
-        element.offsetHeight;
+        void element.offsetHeight;
         element.classList.add('animated-' + element.id);
     });
-    smoothScroll("resultsContainer");
+
+    const newScrollY = window.scrollY;
+    if (oldScrollY > newScrollY) {
+        const scrollYDiff = oldScrollY - newScrollY - 1;
+        addToSpacer(scrollYDiff);
+        window.scrollTo(0, oldScrollY); 
+    }
+
+    const resultsContainer = document.getElementById('resultsContainer');
+    const resultsContainerRect = resultsContainer.getBoundingClientRect();
+    const visibleWindowHeight = window.innerHeight;
+    const resultsFullyVisible = visibleWindowHeight - resultsContainerRect.top - resultsContainer.offsetHeight >= 0;
+    if (!resultsFullyVisible) smoothScroll("resultsContainer");
 }
 
 // Validates if input is blank and forces focus/tooltip on first empty input
